@@ -1,0 +1,231 @@
+---
+title: "Robust approaches to modelling fragile conservation biology: flexible solutions to non-normal, hierarchical, temporal, spatial, and phylogenetic data"
+author: "Yefeng Yang, Jinming Pan, David Warton, Shinichi Nakagawa"
+date: "10-03-2026"
+output:
+  rmdformats::downcute:
+    code_folding: show
+    self_contained: true
+    thumbnails: false
+    lightbox: true
+    downcute_theme: "chaos"
+pkgdown:
+  as_is: true
+---
+
+
+# 0 Code attribution
+
+Parts of the diagnostic workflow and example code in this document are inspired by or adapted from:
+
+Hartig, F. *Advanced Regression Models with R*.  
+
+This work is licensed under a Creative Commons Attribution–NonCommercial–ShareAlike 4.0 International License (CC BY-NC-SA 4.0).
+
+The examples provided here modify and extend the original material by using simulated datasets and workflows tailored to demonstrate (temporal) autocorrelation, heteroscedasticity, and outliers diagnostics.
+
+# 1 Simulate temporally autocorrelated ecological data
+
+We simulate species richness driven by temperature, with AR(1) temporal dependence.
+
+```{r}
+set.seed(2026)
+
+AR1sim <- function(n, phi, sigma = 1){
+  x <- numeric(n)
+  x[1] <- rnorm(1,0,sigma)
+  for(i in 2:n){
+    x[i] <- phi * x[i-1] + rnorm(1,0,sigma)
+  }
+  return(x)
+}
+
+n <- 1000
+year <- 1:n
+
+temperature <- scale(rnorm(n, 15, 3))
+
+#  temporal autocorrelation
+epsilon <- AR1sim(n, phi = 0.9, sigma = 0.5)
+
+richness <- 20 + 2*temperature + epsilon
+
+temporal_data <- data.frame(
+  year = year,
+  temperature = as.numeric(temperature),
+  richness = richness
+)
+
+plot(temporal_data$year, temporal_data$richness, type="l")
+```
+
+
+# 2 Fit a model ignoring the structured ecological trend
+
+First, let's include any predictors and thus we do not account for any temporal trend. 
+
+```{r}
+ignore_trend = lm(richness ~ 1, data = temporal_data)
+summary(ignore_trend)
+```
+
+Check the residuals:
+
+```{r}
+plot(residuals(ignore_trend))
+```
+
+Have a look at the correlation between richness as a function of their lag (temporal distance):
+
+```{r}
+library(DHARMa)
+acf(residuals(ignore_trend), type = "correlation", plot = T)
+pacf(residuals(ignore_trend), plot = T)
+testTemporalAutocorrelation(ignore_trend, time = temporal_data$year)
+```
+
+
+# 3 Fit a model capturing the ecological trend
+
+This model accounts for temporal trend but does not model temporal dependence.
+
+```{r}
+mod_trend = lm(richness ~ temperature, data = temporal_data)
+summary(mod_trend)
+```
+
+
+Fit a model accounting for temporal dependence, but not temporal trend:
+
+```{r}
+library(nlme)
+mod_trend2 <- gls(
+  richness ~ temperature,
+  data = temporal_data
+)
+summary(mod_trend2)
+```
+
+
+Given that `gls` is not a `DHARMa` object, we now use `glmmTMB` for illustration:
+
+```{r}
+library(glmmTMB)
+mod_trend3 = glmmTMB(richness ~ ar1(factor(year) + 0 | 1), data = temporal_data) # `1` can be replaced by `grp` indicating multiple time series
+summary(mod_trend3)
+testTemporalAutocorrelation(mod_trend3, time = temporal_data$year)
+```
+
+
+Fit a model accounting for both temporal trend and temporal dependence:
+
+```{r}
+# using gls
+mod_trend4 <- gls(
+  richness ~ temperature, 
+  corr = corAR1(0.9, form = ~ 1),
+  data = temporal_data
+)
+summary(mod_trend4)
+
+#using glmmTMB
+mod_trend5 = glmmTMB(richness ~ temperature + ar1(0 + factor(year) | 1), data = temporal_data)
+summary(mod_trend5)
+```
+
+
+# 4 Residual diagnostics with DHARMa
+
+The diagnostic plots evaluate whether residuals behave as expected under the fitted model:
+
+We look for
+
+- uniform residual distribution
+
+- no strong structure in residual plots
+
+- no systematic trends
+
+If temporal autocorrelation exists, residuals often show structured deviations from randomness.
+
+For the diagnostic of the model accounting for temporal trend but does not model temporal dependence (`mod_trend`):
+
+```{r}
+acf(residuals(mod_trend), type = "correlation", plot = T)
+pacf(residuals(mod_trend), plot = T)
+library(DHARMa)
+res <- simulateResiduals(mod_trend)
+plot(res)
+testTemporalAutocorrelation(res, time = temporal_data$year)
+```
+
+For the diagnostic of the model accounting for temporal dependence but does not model temporal trend (`mod_trend3`):
+
+```{r}
+acf(residuals(mod_trend3), type = "correlation", plot = T)
+pacf(residuals(mod_trend3), plot = T)
+res <- simulateResiduals(mod_trend3)
+plot(res)
+testTemporalAutocorrelation(res, time = temporal_data$year)
+```
+
+For the diagnostic of the model accounting for both temporal dependence temporal trend (`mod_trend3`):
+
+```{r}
+acf(residuals(mod_trend5), type = "correlation", plot = T)
+pacf(residuals(mod_trend5), plot = T)
+res <- simulateResiduals(mod_trend5)
+plot(res)
+testTemporalAutocorrelation(res, time = temporal_data$year)
+```
+
+
+**Important interpretation principle:**
+
+We do not recommend relying solely on the P-value obtained from the `DHARMa` package. We encourage evaluate:
+
+- magnitude of the autocorrelation statistic
+
+- residual plots
+
+- ecological plausibility
+
+
+# 5 Diagnosing heteroscedasticity
+
+Let's visually and statistically diagonise potential heteroscedasticity of the fitted model:
+
+```{r}
+# visual
+plotResiduals(res, temporal_data$temperature)
+# statistical
+testDispersion(res)
+```
+
+# 6 Detecting outliers
+
+Let's visually and statistically diagonise potential outliers  of the fitted model:
+
+```{r}
+# visual
+plot(res, quantreg = TRUE)
+# statistical
+testOutliers(res)
+```
+
+
+# Declaration
+
+This document contains adapted material inspired by examples from
+Florian Hartig's *Advanced Regression Models with R*.
+
+Licensed under Creative Commons Attribution–NonCommercial–ShareAlike 4.0.
+Adaptations in this document include new simulated datasets (completely different data-generation process), modified
+code examples, and integration with DHARMa-based diagnostics.
+
+# Package information
+
+```{r}
+subset(data.frame(sessioninfo::package_info()), attached==TRUE, c(package, loadedversion))
+```
+
