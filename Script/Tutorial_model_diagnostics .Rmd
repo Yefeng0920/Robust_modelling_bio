@@ -1,0 +1,770 @@
+---
+title: "Robust modelling and inference for conservation biology: flexible statistical solutions for non-normal, hierarchical, temporal, spatial, and phylogenetic data"
+author: "Yefeng Yang, Jinming Pan, David Warton, Shinichi Nakagawa"
+date: "Aug 2026"
+output:
+  rmdformats::downcute:
+    code_folding: show
+    self_contained: true
+    thumbnails: false
+    lightbox: true
+    downcute_theme: "chaos"
+pkgdown:
+  as_is: true
+---
+
+
+# Introduction
+
+This tutorial has two parts. The first summarizes diagnostic tools for detecting residual dependence and other common departures from model assumptions. The second uses a simulated time series to demonstrate a principled modelling workflow: represent plausible ecological trends first, diagnose the dependence that remains, and add a residual dependence structure when it is needed.
+
+# 1 Model diagnostics
+
+Model diagnostics ask whether the residuals behave as expected under the fitted model. The relevant target is therefore **residual dependence**, conditional on the systematic component and all other structures already represented in the model, rather than patterning in the observed response itself.
+
+DHARMa provides simulation-based residual diagnostics for many generalized linear and mixed-effects models. After creating a DHARMa residual object with `simulateResiduals()`, the following tools can be used as part of a broader diagnostic assessment.
+
+| Diagnostic question | Useful DHARMa tools | Interpretation |
+|:--|:--|:--|
+| Is temporal structure left in the residuals? | `testTemporalAutocorrelation(res, time = ...)` | Tests whether residuals remain autocorrelated over time. |
+| Is spatial structure left in the residuals? | `testSpatialAutocorrelation(res, x = ..., y = ...)` or a distance matrix | Tests whether residual similarity varies with spatial distance. |
+| Is phylogenetic structure left in the residuals? | `testPhylogeneticAutocorrelation(res, tree = ...)` | Tests whether residual similarity follows phylogenetic relatedness. |
+| Is the response more or less variable than expected under the model? | `testDispersion(res)` | Assesses overdispersion or underdispersion relative to model-based simulations. |
+| Does residual spread vary across fitted values, predictors or groups? | `plotResiduals(res, predictor)` and other residual plots | Systematic changes in residual spread can indicate heteroscedasticity. |
+| Are there more extreme observations than the fitted model predicts? | `plot(res, quantreg = TRUE)` and `testOutliers(res)` | Identifies observations outside the simulation envelope more often than expected. |
+
+These procedures answer different questions. In particular, `testDispersion()` is not a specific test of heteroscedasticity: dispersion concerns overall variability relative to the fitted distribution, whereas heteroscedasticity concerns changes in residual variance across the predictor space. Both graphical and numerical diagnostics should therefore be considered.
+
+Temporal tests require unique time values, and spatial tests require unique coordinates. With repeated observations at the same time or location, residuals may need to be aggregated using `recalculateResiduals()` or examined separately within the relevant series or strata. Diagnostics also depend on how simulations are generated. For models containing explicit temporal, spatial or phylogenetic correlation structures, conditional simulations, residual rotation or a custom comparison of observed and simulated correlation may sometimes be required.
+
+Diagnostic P values should not be used as binary decision rules. They are indicators of possible model misspecification and should be interpreted alongside residual plots, the direction and magnitude of deviations, sample size, and ecological plausibility. A small P value does not identify the source of a problem, and a large P value does not demonstrate that the model is adequate.
+
+
+```{r diagnostic-setup}
+library(DHARMa)
+```
+
+## 1.1 Temporal residual autocorrelation
+
+We first simulate a response with an environmental effect and AR(1) residual dependence. The fitted model represents the environmental effect but assumes independent residuals. `testTemporalAutocorrelation()` therefore assesses the temporal structure left after the systematic component has been fitted.
+
+```{r temporal-diagnostic}
+set.seed(2026)
+
+n_time <- 150
+time <- seq_len(n_time)
+environment <- rnorm(n_time)
+
+temporal_error <- numeric(n_time)
+temporal_error[1] <- rnorm(1)
+for (i in 2:n_time) {
+  temporal_error[i] <- 0.75 * temporal_error[i - 1] + rnorm(1, sd = 0.6)
+}
+
+temporal_example <- data.frame(
+  time = time,
+  environment = environment,
+  response = 2 + 1.5 * environment + temporal_error
+)
+
+temporal_model <- lm(response ~ environment, data = temporal_example)
+temporal_res <- simulateResiduals(temporal_model, n = 500)
+
+plot(temporal_res)
+testTemporalAutocorrelation(
+  temporal_res,
+  time = temporal_example$time
+)
+```
+
+The test requires unique time values. If several observations share a time point, residuals can be aggregated by time using `recalculateResiduals()` or examined separately within independent time series.
+
+## 1.2 Spatial residual autocorrelation
+
+The next example generates observations on a regular spatial grid. Nearby observations share a spatially correlated error, but the fitted model again assumes independence. `testSpatialAutocorrelation()` uses the coordinates to test whether the DHARMa residuals are more similar at shorter spatial distances.
+
+```{r spatial-diagnostic}
+set.seed(2026)
+
+spatial_example <- expand.grid(
+  x = seq(0, 1, length.out = 10),
+  y = seq(0, 1, length.out = 10)
+)
+spatial_example$environment <- rnorm(nrow(spatial_example))
+
+spatial_distance <- as.matrix(
+  dist(spatial_example[c("x", "y")])
+)
+spatial_covariance <- exp(-spatial_distance / 0.20)
+spatial_error <- as.numeric(
+  t(chol(spatial_covariance + diag(1e-8, nrow(spatial_covariance)))) %*%
+    rnorm(nrow(spatial_example))
+)
+
+spatial_example$response <-
+  3 + 1.2 * spatial_example$environment + spatial_error
+
+spatial_model <- lm(response ~ environment, data = spatial_example)
+spatial_res <- simulateResiduals(spatial_model, n = 500)
+
+plot(spatial_res)
+testSpatialAutocorrelation(
+  spatial_res,
+  x = spatial_example$x,
+  y = spatial_example$y
+)
+```
+
+The coordinates must be unique for this form of the test. For repeated observations at the same location, residuals can be aggregated by location with `recalculateResiduals()`. Alternatively, a precomputed distance matrix can be supplied through the `distMat` argument.
+
+## 1.3 Phylogenetic residual autocorrelation
+
+Phylogenetic residual autocorrelation can be examined in the same way. Here, a continuous phylogenetic effect is simulated along a tree but omitted from an ordinary linear model. The observations are kept in the same order as the tree tips before `testPhylogeneticAutocorrelation()` is applied.
+
+```{r phylogenetic-diagnostic}
+set.seed(2026)
+
+phylogeny <- ape::rtree(n = 80)
+phylogenetic_error <- ape::rTraitCont(
+  phylogeny,
+  model = "BM",
+  sigma = 1
+)
+
+phylogenetic_example <- data.frame(
+  species = phylogeny$tip.label,
+  environment = rnorm(length(phylogeny$tip.label))
+)
+phylogenetic_example$phylogenetic_error <-
+  phylogenetic_error[phylogenetic_example$species]
+phylogenetic_example$response <-
+  4 + 1.3 * phylogenetic_example$environment +
+  as.numeric(scale(phylogenetic_example$phylogenetic_error))
+
+stopifnot(identical(phylogenetic_example$species, phylogeny$tip.label))
+
+phylogenetic_model <- lm(
+  response ~ environment,
+  data = phylogenetic_example
+)
+phylogenetic_res <- simulateResiduals(phylogenetic_model, n = 500)
+
+plot(phylogenetic_res)
+testPhylogeneticAutocorrelation(
+  phylogenetic_res,
+  tree = phylogeny
+)
+```
+
+The order of observations must correspond to the order of tips in the phylogeny. In an empirical analysis, species names should therefore be matched explicitly before fitting the model and conducting the test.
+
+## 1.4 Heteroscedasticity, dispersion and unusual observations
+
+Heteroscedasticity concerns changes in residual spread across the predictor space. The following simulation makes the residual standard deviation increase with the environmental predictor. `plotResiduals()` provides a direct graphical check of this pattern.
+
+```{r heteroscedasticity-diagnostic}
+set.seed(2029)
+
+n_hetero <- 250
+environment_hetero <- runif(n_hetero, 0, 1)
+residual_sd <- 0.25 + 1.5 * environment_hetero
+
+heteroscedastic_example <- data.frame(
+  environment = environment_hetero,
+  response = 2 + 2 * environment_hetero +
+    rnorm(n_hetero, sd = residual_sd)
+)
+
+heteroscedastic_model <- lm(
+  response ~ environment,
+  data = heteroscedastic_example
+)
+heteroscedastic_res <- simulateResiduals(
+  heteroscedastic_model,
+  n = 500
+)
+
+plotResiduals(
+  heteroscedastic_res,
+  heteroscedastic_example$environment
+)
+```
+
+Dispersion is related but distinct: it asks whether the overall variability is greater or smaller than expected under the fitted response distribution. To illustrate this distinction, we generate overdispersed counts from a negative binomial distribution, add one unusually large count, and then fit a Poisson model. `testDispersion()` compares observed variability with model-based simulations, while the residual plot and `testOutliers()` assess observations beyond the simulated envelope.
+
+```{r dispersion-outlier-diagnostic}
+set.seed(2030)
+
+n_count <- 250
+count_example <- data.frame(
+  environment = rnorm(n_count)
+)
+expected_count <- exp(1 + 0.5 * count_example$environment)
+count_example$count <- rnbinom(
+  n_count,
+  mu = expected_count,
+  size = 0.8
+)
+count_example$count[which.max(expected_count)] <-
+  count_example$count[which.max(expected_count)] + 50
+
+count_model <- glm(
+  count ~ environment,
+  family = poisson,
+  data = count_example
+)
+count_res <- simulateResiduals(count_model, n = 500)
+
+testDispersion(count_res)
+plot(count_res, quantreg = TRUE)
+testOutliers(count_res)
+```
+
+These diagnostics answer different questions and should be interpreted together. `testDispersion()` is not a test of heteroscedasticity, and `testOutliers()` does not determine whether an unusual observation is erroneous. Diagnostic P values should not be treated as automatic decision rules. They should be considered alongside the residual plots, the direction and magnitude of deviations, sample size, sampling design and ecological plausibility.
+
+For models that already contain explicit temporal, spatial or phylogenetic correlation structures, the way residual simulations are generated also matters. Unconditional simulations can retain the fitted correlation in DHARMa residuals. Depending on the model, conditional simulations, residual rotation or a custom comparison of observed and simulated correlation may be needed.
+
+
+
+# 2 Correct modelling workflow for dependent data
+
+The worked example below focuses on temporal dependence. The same principle applies to spatial and phylogenetic data: first specify the ecological processes that shape the expected response, and then use the appropriate coordinates, distance matrix or phylogenetic tree to assess the structure remaining in the residuals.
+
+
+For deciding whether an additional dependence structure is required, the relevant quantity is the residual dependence remaining after the systematic component and other model structures have been represented. Spatial, temporal or phylogenetic patterns in the observed response do not, by themselves, demonstrate residual autocorrelation. Such patterns may arise because the expected response varies systematically with environmental conditions, time, space or evolutionary history. Researchers should therefore represent plausible ecological trends using appropriate covariates, interactions or smooth functions before diagnosing any residual dependence that remains.
+
+A defensible workflow is to specify the systematic component from ecological knowledge, fit the model, simulate and inspect residuals, test for residual dependence, revise the dependence structure if necessary, and then repeat the diagnostics. The following example isolates these steps using temporal data.
+
+```{r}
+# necessary packages
+
+library(nlme)
+library(DHARMa)
+set.seed(2026)
+```
+
+
+## 2.1 Simulate ecologically structured temporal data
+
+```{r}
+# twelve years of monthly monitoring
+n_time <- 144L
+time <- seq_len(n_time)
+
+# temperature has both seasonal and stochastic temporal structure
+temperature_noise <- as.numeric(
+  arima.sim(
+    model = list(ar = 0.80),
+    n = n_time,
+    sd = 0.80
+  )
+)
+
+temperature <- 15 +
+  6 * sin(2 * pi * time / 12) +
+  temperature_noise
+
+temperature_z <- as.numeric(scale(temperature))
+
+# residual ecological variation follows a separate stationary AR(1) process
+true_phi <- 0.65
+
+ar1_error <- as.numeric(
+  arima.sim(
+    model = list(ar = true_phi),
+    n = n_time,
+    sd = 1.20
+  )
+)
+
+# continuous biodiversity response
+biodiversity_index <- 20 +
+  2.25 * temperature_z +
+  ar1_error
+
+dat_time <- data.frame(
+  time = time,
+  year = 1 + (time - 1) / 12,
+  temperature = temperature,
+  temperature_z = temperature_z,
+  biodiversity_index = biodiversity_index
+)
+
+head(dat_time)
+```
+
+## 2.2 Inspect patterns in the observed data
+
+```{r}
+old_par <- par(no.readonly = TRUE)
+
+par(mfrow = c(2, 1), mar = c(4, 4, 2, 1))
+
+plot(
+  dat_time$time,
+  dat_time$biodiversity_index,
+  type = "l",
+  lwd = 1.5,
+  col = "#2166AC",
+  xlab = "Monitoring occasion",
+  ylab = "Biodiversity index",
+  main = "Observed biodiversity pattern through time"
+)
+
+plot(
+  dat_time$time,
+  dat_time$temperature,
+  type = "l",
+  lwd = 1.5,
+  col = "#1B9E77",
+  xlab = "Monitoring occasion",
+  ylab = "Temperature",
+  main = "Temporally structured environmental covariate"
+)
+
+par(old_par)
+
+# these plots reveal temporal patterns in the response and predictor.
+# they do not, by themselves, demonstrate residual autocorrelation.
+```
+## 2.3 Start with an intentionally incomplete model
+
+```{r}
+model_mean_only_lm <- lm(
+  biodiversity_index ~ 1,
+  data = dat_time
+)
+
+res_mean_only <- simulateResiduals(
+  fittedModel = model_mean_only_lm,
+  n = 1000,
+  plot = FALSE
+)
+
+plot(res_mean_only)
+
+testTemporalAutocorrelation(
+  simulationOutput = res_mean_only,
+  time = dat_time$time
+)
+
+# the residuals are temporally autocorrelated. However, this model omits
+# both the temporally structured environmental predictor and the AR(1)
+# residual process. The diagnostic does not identify which omission is
+# responsible.
+```
+
+
+## 2.4 Represent the systematic ecological component first
+
+```{r}
+model_systematic_lm <- lm(
+  biodiversity_index ~ temperature_z,
+  data = dat_time
+)
+
+summary(model_systematic_lm)
+
+res_systematic <- simulateResiduals(
+  fittedModel = model_systematic_lm,
+  n = 1000,
+  plot = FALSE
+)
+
+plot(res_systematic)
+
+plotResiduals(
+  simulationOutput = res_systematic,
+  predictor = dat_time$temperature_z
+)
+
+testTemporalAutocorrelation(
+  simulationOutput = res_systematic,
+  time = dat_time$time
+)
+
+# temperature explains an important part of the temporal pattern in the
+# response. Nevertheless, temporal autocorrelation remains because the
+# simulation also contains a separate AR(1) residual process.
+```
+
+## 2.5 Fit competing generalized least-squares models
+
+```{r}
+# maximum likelihood is used here because models with different fixed
+# effects will be compared using AIC.
+
+# Model A: neither temperature nor residual autocorrelation
+model_mean_only_ml <- gls(
+  biodiversity_index ~ 1,
+  data = dat_time,
+  method = "ML"
+)
+
+# Model B: temperature represented, residuals assumed independent
+model_systematic_only_ml <- gls(
+  biodiversity_index ~ temperature_z,
+  data = dat_time,
+  method = "ML"
+)
+
+# Model C: residual AR(1) structure represented, temperature omitted
+model_ar1_only_ml <- gls(
+  biodiversity_index ~ 1,
+  correlation = corAR1(form = ~ time),
+  data = dat_time,
+  method = "ML"
+)
+
+# Model D: both the systematic component and residual AR(1) structure
+model_full_ml <- gls(
+  biodiversity_index ~ temperature_z,
+  correlation = corAR1(form = ~ time),
+  data = dat_time,
+  method = "ML"
+)
+```
+
+## 2.6 Compare the competing models
+
+```{r}
+candidate_models <- list(
+  "Mean only" = model_mean_only_ml,
+  "Temperature only" = model_systematic_only_ml,
+  "AR(1) only" = model_ar1_only_ml,
+  "Temperature + AR(1)" = model_full_ml
+)
+
+aic_table <- AIC(
+  model_mean_only_ml,
+  model_systematic_only_ml,
+  model_ar1_only_ml,
+  model_full_ml
+)
+
+aic_table$model <- names(candidate_models)
+aic_table$delta_AIC <- aic_table$AIC - min(aic_table$AIC)
+
+aic_table <- aic_table[
+  ,
+  c("model", "df", "AIC", "delta_AIC")
+]
+
+rownames(aic_table) <- NULL
+
+aic_table
+
+
+# Calculate lag-one autocorrelation after accounting for each model's
+# fitted correlation structure
+
+extract_lag1_acf <- function(model) {
+  model_residuals <- residuals(
+    model,
+    type = "normalized"
+  )
+
+  as.numeric(
+    acf(
+      model_residuals,
+      lag.max = 1,
+      plot = FALSE
+    )$acf[2]
+  )
+}
+
+lag1_results <- data.frame(
+  model = names(candidate_models),
+  residual_lag1_acf = vapply(
+    candidate_models,
+    extract_lag1_acf,
+    numeric(1)
+  )
+)
+
+lag1_results
+
+
+```
+
+The AR(1)-only model may substantially reduce residual autocorrelation, but this does not make it scientifically complete: it still omits the known environmental relationship. Residual diagnostics cannot replace ecological reasoning about the systematic component.
+
+## 2.7 Refit the inferential models using REML
+
+```{r}
+# REML is used for the final parameter estimates after model comparison.
+
+model_systematic_only <- update(
+  model_systematic_only_ml,
+  method = "REML"
+)
+
+model_full <- update(
+  model_full_ml,
+  method = "REML"
+)
+
+summary(model_systematic_only)
+summary(model_full)
+```
+
+
+## 2.8 Compare inference with and without the AR(1) structure
+
+```{r}
+extract_temperature_result <- function(model) {
+  coefficient_table <- summary(model)$tTable
+  result <- coefficient_table["temperature_z", ]
+
+  estimate <- unname(result["Value"])
+  standard_error <- unname(result["Std.Error"])
+  degrees_freedom <- unname(result["DF"])
+  critical_value <- qt(0.975, df = degrees_freedom)
+
+  data.frame(
+    estimate = estimate,
+    standard_error = standard_error,
+    lower_95_CI = estimate - critical_value * standard_error,
+    upper_95_CI = estimate + critical_value * standard_error,
+    p_value = unname(result["p-value"])
+  )
+}
+
+temperature_inference <- rbind(
+  "Independence model" =
+    extract_temperature_result(model_systematic_only),
+  "AR(1) model" =
+    extract_temperature_result(model_full)
+)
+
+temperature_inference
+```
+
+Positive residual autocorrelation often reduces the effective amount of independent information. Accounting for it can therefore materially change standard errors and confidence intervals, even when the point estimate is similar.
+
+
+## 2.9 Examine the estimated AR(1) correlation
+
+```{r}
+estimated_phi <- as.numeric(
+  coef(
+    model_full$modelStruct$corStruct,
+    unconstrained = FALSE
+  )
+)
+
+phi_comparison <- data.frame(
+  quantity = c(
+    "True AR(1) correlation",
+    "Estimated AR(1) correlation"
+  ),
+  value = c(
+    true_phi,
+    estimated_phi
+  )
+)
+
+phi_comparison
+```
+
+## 2.10 Diagnose the complete model
+
+Normalized gls residuals are standardized and transformed using the estimated residual correlation matrix. They are therefore appropriate for assessing whether residual structure remains after fitting AR(1).
+
+
+```{r}
+res_full <- residuals(
+  model_full,
+  type = "normalized"
+)
+
+fitted_full <- fitted(model_full)
+
+old_par <- par(no.readonly = TRUE)
+
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+
+# Residual location and spread
+plot(
+  fitted_full,
+  res_full,
+  pch = 16,
+  col = adjustcolor("#2166AC", alpha.f = 0.65),
+  xlab = "Fitted values",
+  ylab = "Normalized residuals",
+  main = "Residuals versus fitted values"
+)
+
+abline(h = 0, lty = 2, col = "grey40")
+
+lines(
+  lowess(fitted_full, res_full),
+  col = "#B2182B",
+  lwd = 2
+)
+
+# Temporal pattern remaining after the complete model
+plot(
+  dat_time$time,
+  res_full,
+  type = "b",
+  pch = 16,
+  cex = 0.55,
+  col = "#2166AC",
+  xlab = "Monitoring occasion",
+  ylab = "Normalized residuals",
+  main = "Residuals through time"
+)
+
+abline(h = 0, lty = 2, col = "grey40")
+
+# Residual autocorrelation
+acf(
+  res_full,
+  main = "ACF of normalized residuals"
+)
+
+# Normality and unusual observations
+qqnorm(
+  res_full,
+  pch = 16,
+  col = adjustcolor("#2166AC", alpha.f = 0.65),
+  main = "Normal Q-Q plot"
+)
+
+qqline(
+  res_full,
+  col = "#B2182B",
+  lwd = 2
+)
+
+par(old_par)
+```
+
+## 2.11 Supplementary test of remaining temporal dependence
+
+The ACF is the primary diagnostic. The Ljung-Box test provides an
+ additional omnibus check across the first 12 lags. One degree of freedom is allowed for the estimated AR(1) parameter.
+
+
+```{r}
+box_test_full <- Box.test(
+  res_full,
+  lag = 12,
+  type = "Ljung-Box",
+  fitdf = 1
+)
+
+box_test_full
+```
+
+## 2.12 Check heteroscedasticity
+
+```{r}
+old_par <- par(no.readonly = TRUE)
+
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+
+plot(
+  fitted_full,
+  res_full,
+  pch = 16,
+  col = adjustcolor("#2166AC", alpha.f = 0.65),
+  xlab = "Fitted values",
+  ylab = "Normalized residuals",
+  main = "Residual location"
+)
+
+abline(h = 0, lty = 2, col = "grey40")
+
+lines(
+  lowess(fitted_full, res_full),
+  col = "#B2182B",
+  lwd = 2
+)
+
+plot(
+  fitted_full,
+  sqrt(abs(res_full)),
+  pch = 16,
+  col = adjustcolor("#2166AC", alpha.f = 0.65),
+  xlab = "Fitted values",
+  ylab = expression(sqrt("|normalized residual|")),
+  main = "Residual spread"
+)
+
+lines(
+  lowess(fitted_full, sqrt(abs(res_full))),
+  col = "#B2182B",
+  lwd = 2
+)
+
+par(old_par)
+
+
+```
+
+A systematic change in residual spread across fitted values would suggest heteroscedasticity and could motivate an explicit variance structure.
+
+## 2.13 Identify potentially unusual observations
+
+```{r}
+potential_outliers <- which(abs(res_full) > 3)
+
+outlier_table <- dat_time[
+  potential_outliers,
+  c(
+    "time",
+    "year",
+    "temperature",
+    "biodiversity_index"
+  ),
+  drop = FALSE
+]
+
+outlier_table$normalized_residual <- res_full[potential_outliers]
+
+outlier_table
+```
+
+ A large normalized residual identifies an observation that merits
+ investigation. It is not, by itself, a justification for deleting the observation.
+
+## 2.14 Final model summary
+
+```{r}
+summary(model_full)
+
+data.frame(
+  temperature_effect = unname(coef(model_full)["temperature_z"]),
+  estimated_phi = estimated_phi,
+  residual_standard_deviation = model_full$sigma
+)
+```
+
+
+# ------------------------------------------------------------
+# Notes for adapting the workflow
+# ------------------------------------------------------------
+
+1. `corAR1()` assumes integer-valued, equally spaced observation times.
+
+2. For several independent time series, such as repeated observations from multiple sites, use:
+`correlation = corAR1(form = ~ time | site)`
+
+3. For irregularly spaced observations, consider: `correlation = corCAR1(form = ~ continuous_time | site)`
+
+4. The systematic component should be selected using ecological knowledge, study design and the scientific question. Residual diagnostics should then assess the dependence remaining after that structure is represented.
+
+# Acknowledgement and licence
+
+Parts of the diagnostic workflow and illustrative code were adapted from or inspired by Florian Hartig's *Advanced Regression Models with R*. We modified and extended the examples using a different data-generating process and integrated simulation-based diagnostics for residual dependence, dispersion and unusual observations.
+
+This work is licensed under a Creative Commons Attribution–NonCommercial–ShareAlike 4.0 International License (CC BY-NC-SA 4.0).
+
+# Package information
+
+```{r}
+subset(data.frame(sessioninfo::package_info()), attached==TRUE, c(package, loadedversion))
+```
+
