@@ -384,6 +384,7 @@ body {
   line-height: 1.64;
   background: var(--page-bg);
   color: var(--text);
+  overflow-x: hidden;
 }
 html[data-theme="light"] body,
 html[data-theme="dark"] body {
@@ -399,6 +400,7 @@ a:focus {
 }
 .main-container {
   max-width: 1260px !important;
+  overflow-wrap: break-word;
 }
 @media (min-width: 1200px) {
   .container {
@@ -522,6 +524,7 @@ h1, h2, h3 {
 table {
   font-size: 16px;
   line-height: 1.5;
+  max-width: 100%;
 }
 table,
 .table,
@@ -551,18 +554,23 @@ pre {
   line-height: 1.58;
   padding: 16px;
   white-space: pre-wrap;
-  word-break: normal;
+  overflow-x: auto;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 pre code,
 code {
   color: var(--code-text);
   background: var(--inline-code-bg);
   font-size: 0.95em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 pre code {
   background: transparent;
   font-size: inherit;
   line-height: inherit;
+  white-space: pre-wrap;
 }
 blockquote,
 details {
@@ -579,12 +587,22 @@ details {
   background: var(--toc-bg);
   border-color: var(--table-border);
   font-size: 16px;
+  max-width: 100%;
 }
 .tocify .list-group-item {
   background: transparent;
   color: var(--toc-text);
   border-color: transparent;
   padding: 8px 12px;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+.tocify .tocify-item a,
+.tocify .list-group-item a {
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 .tocify .list-group-item.active,
 .tocify .list-group-item.active:hover,
@@ -695,19 +713,135 @@ html[data-theme="dark"] .theme-toggle-icon.moon {
   border: 0;
 }
 @media (max-width: 900px) {
+  html,
   body {
     font-size: 17px;
+    max-width: 100%;
+    overflow-x: hidden;
   }
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+  .container-fluid.main-container,
   .main-container {
+    width: calc(100vw - 28px) !important;
     max-width: calc(100vw - 28px) !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    margin-left: 14px !important;
+    margin-right: 14px !important;
+  }
+  .row {
+    display: block;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+  h1.title {
+    font-size: clamp(2rem, 9vw, 2.55rem);
+  }
+  h1,
+  h2,
+  h3,
+  h4.author,
+  h4.date,
+  p,
+  li {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  h4.author,
+  h4.date {
+    max-width: calc(100vw - 28px);
+    white-space: normal !important;
+  }
+  .tutorial-hero {
+    padding: 18px 16px;
+    width: calc(100vw - 28px) !important;
+    max-width: calc(100vw - 28px) !important;
+  }
+  .tutorial-hero .hero-title {
+    font-size: 20px;
+    max-width: calc(100vw - 62px) !important;
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+  .tutorial-hero .hero-copy {
+    max-width: calc(100vw - 62px) !important;
+    font-size: 16px;
+  }
+  .hero-meta {
+    width: calc(100vw - 62px) !important;
+    max-width: calc(100vw - 62px) !important;
+    gap: 7px;
+  }
+  .hero-meta span {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .workflow-grid {
+    grid-template-columns: 1fr;
+    width: calc(100vw - 62px) !important;
+    max-width: calc(100vw - 62px) !important;
+  }
+  .workflow-step {
+    min-width: 0;
+    width: calc(100vw - 62px) !important;
+    max-width: calc(100vw - 62px) !important;
   }
   pre {
     font-size: 0.95rem;
+    max-width: 100%;
   }
   table {
+    width: 100% !important;
+    max-width: 100%;
+    table-layout: fixed;
+    white-space: normal;
+  }
+  th,
+  td {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  #TOC,
+  .tocify,
+  .tocify-extend-page {
+    display: none !important;
+  }
+  .toc-content {
+    float: none !important;
+    width: calc(100vw - 28px) !important;
+    max-width: calc(100vw - 28px) !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+  .tocify {
+    width: 100% !important;
+    max-width: calc(100vw - 28px);
+    overflow: visible !important;
+  }
+  .tocify .list-group-item {
+    height: auto !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+  }
+  .tocify .tocify-item a,
+  .tocify .list-group-item a {
     display: block;
-    overflow-x: auto;
-    white-space: nowrap;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+  }
+  .tocify,
+  .tocify ul,
+  .tocify li,
+  .tocify a,
+  .tocify span {
+    text-overflow: clip !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
   }
 }
 </style>
@@ -823,10 +957,22 @@ If a package is missing, the tutorial does one of two things:
 
 - Advanced chunks are displayed but skipped if their package is unavailable.
 
-Minimal install for the core tutorial: `install.packages(c( "rmarkdown", "knitr", "ggplot2", "nlme", "glmmTMB", "sandwich", "lmtest", "MASS", "sessioninfo"))`
+Minimal install for the core tutorial:
 
-Full install for optional sections: `install.packages(c("DHARMa", "geepack", "plm", "brms", "clubSandwich"))`
+```{r minimal-install, eval=FALSE}
+install.packages(c(
+  "rmarkdown", "knitr", "ggplot2", "nlme", "glmmTMB",
+  "sandwich", "lmtest", "MASS", "sessioninfo"
+))
+```
 
+Full install for optional sections:
+
+```{r optional-install, eval=FALSE}
+install.packages(c(
+  "DHARMa", "geepack", "plm", "brms", "ape", "clubSandwich"
+))
+```
 
 On an ordinary laptop, the core examples should render in under a minute after packages are installed. The Bayesian section is intentionally not run by default.
 
@@ -858,7 +1004,7 @@ packages <- data.frame(
   package = c(
     "rmarkdown", "knitr", "nlme", "glmmTMB", "sandwich", "lmtest",
     "MASS", "ggplot2", "sessioninfo", "DHARMa", "geepack", "plm", "brms",
-    "clubSandwich"
+    "ape", "clubSandwich"
   ),
   role = c(
     "render page", "tables and knitting", "GLS and variance structures",
@@ -866,6 +1012,7 @@ packages <- data.frame(
     "coefficient tests", "robust regression", "figures", "session information",
     "simulation residual diagnostics", "GEE marginal models",
     "panel fixed-effects models", "Bayesian models",
+    "phylogenetic covariance matrices for optional brms examples",
     "cluster-robust small-sample corrections"
   )
 )
@@ -928,7 +1075,7 @@ time_gaps
 ```
 
 <div class="source-box">
-<p><strong>Source checks.</strong> Package claims in this tutorial were checked against primary or official documentation where possible: <a href="https://cran.r-project.org/package%3DglmmTMB/vignettes/covstruct.html">glmmTMB covariance structures</a>, <a href="https://cran.r-project.org/web/packages/nlme/nlme.pdf">nlme manual</a>, <a href="https://sandwich.r-forge.r-project.org/reference/vcovCL.html">sandwich vcovCL</a>, <a href="https://cran.r-project.org/web/packages/DHARMa/vignettes/DHARMa.html">DHARMa vignette</a>, <a href="https://paulbuerkner.com/brms/reference/ar.html">brms AR terms</a>, and the package pages linked in the capability matrix below.</p>
+<p><strong>Source checks.</strong> Package claims in this tutorial were checked against primary or official documentation where possible: <a href="https://cran.r-project.org/package%3DglmmTMB/vignettes/covstruct.html">glmmTMB covariance structures</a>, <a href="https://cran.r-project.org/web/packages/nlme/nlme.pdf">nlme manual</a>, <a href="https://sandwich.r-forge.r-project.org/reference/vcovCL.html">sandwich vcovCL</a>, <a href="https://cran.r-project.org/web/packages/DHARMa/vignettes/DHARMa.html">DHARMa vignette</a>, <a href="https://paulbuerkner.com/brms/reference/brm.html">brms model fitting</a>, <a href="https://paulbuerkner.com/brms/reference/ar.html">brms AR terms</a>, <a href="https://paulbuerkner.com/brms/reference/gp.html">brms Gaussian-process terms</a>, <a href="https://paulbuerkner.com/brms/reference/gr.html">brms grouping terms</a>, <a href="https://paulbuerkner.com/brms/articles/brms_phylogenetics.html">brms phylogenetic models</a>, and the package pages linked in the capability matrix below.</p>
 </div>
 
 # The problem: my residuals are autocorrelated
@@ -1758,23 +1905,162 @@ site effect. The comparison is therefore an illustration of task-aligned validat
 models containing site, spatial or other structured effects can show a larger contrast
 between random and blocked splits.
 
-# Optional Bayesian example
+# Optional Bayesian brms examples
 
 <div class="workshop-box">
-<p><strong>Question:</strong> Do Bayesian models remove the need to consider autocorrelation?</p>
-<p>No. Bayesian models can incorporate dependence structures and priors, but the relevant dependence must still be specified. The <code>brms</code> example is displayed rather than run because it requires Stan tooling and may take substantially longer than the core examples.</p>
-<p><strong>Keep in mind:</strong> inspect posterior intervals, posterior predictive checks and convergence diagnostics. Priors can regularize a complex model, but neither priors nor Bayesian computation substitute for an appropriate sampling design and dependence structure.</p>
+<p><strong>Question:</strong> Do Bayesian models remove the need to consider dependence?</p>
+<p>No. Bayesian models can include hierarchical, temporal, spatial and phylogenetic dependence, but the relevant structure still has to be represented in the model. The examples below use <code>brms::brm()</code> because it gives ecologists a practical formula language for posterior uncertainty, priors and several common dependence structures.</p>
+<p><strong>Keep in mind:</strong> these examples are displayed rather than run during rendering. Bayesian fitting requires <code>brms</code>, Stan tooling and deliberate checking of posterior intervals, posterior predictive checks, convergence diagnostics and prior sensitivity.</p>
 </div>
 
 ```{r brms-status, echo=FALSE, results='asis'}
-cat("<p class='skip-note'><strong>Shown but not run by default:</strong> Bayesian examples can take minutes to hours and require <code>brms</code> plus Stan tooling. The code below is visible for readers who want to run it deliberately.</p>")
+cat("<p class='skip-note'><strong>Shown but not run by default:</strong> Bayesian examples can take minutes to hours and require <code>brms</code> plus Stan tooling. The code is visible so readers can copy and run it deliberately.</p>")
 if (!has_pkg("brms")) cat(skip_note("brms"))
+if (!has_pkg("ape")) cat(skip_note("ape"))
 ```
 
-```{r brms-ar1-example, eval=FALSE}
+```{r bayesian-choice-table}
+bayesian_choices <- data.frame(
+  "Dependence" = c(
+    "Hierarchical",
+    "Temporal",
+    "Spatial",
+    "Phylogenetic"
+  ),
+  "Data clue" = c(
+    "Repeated observations from the same site, population or study",
+    "Measurements ordered through time within the same unit",
+    "Nearby sampling locations may be more alike than distant locations",
+    "Species or populations share evolutionary history"
+  ),
+  "brms term" = c(
+    "(1 | site)",
+    "brms::ar(time = year, gr = site, p = 1)",
+    "brms::gp(easting, northing, cov = \"matern32\")",
+    "(1 | brms::gr(species, cov = A))"
+  ),
+  "First question" = c(
+    "Do sites differ in their baseline richness?",
+    "Do neighbouring years remain similar after modelling biology?",
+    "Is there a smooth spatial surface in richness?",
+    "Are related species more similar than unrelated species?"
+  ),
+  check.names = FALSE
+)
+
+knitr::kable(
+  bayesian_choices,
+  caption = "A quick map from ecological dependence questions to common brms terms."
+)
+```
+
+Before the model sketches, we add two small pieces of teaching data. The spatial
+example uses one year of the wetland dataset and gives each site a simple
+coordinate. The phylogenetic example uses a tiny comparative dataset. In real
+analyses, use measured coordinates and a published or otherwise justified tree.
+The wetland examples keep `family = gaussian()` so the Bayesian code matches the
+earlier Gaussian teaching models. Real richness, abundance and occupancy data may
+instead call for Poisson, negative-binomial, hurdle, zero-inflated, binomial or
+other families, checked with posterior predictive plots.
+
+```{r bayesian-teaching-data}
+site_coordinates <- data.frame(
+  site = sort(unique(wetland_monitoring$site)),
+  easting = c(0.0, 1.1, 2.1, 3.0, 0.4, 1.5, 2.7, 3.6, 0.2, 1.4, 2.4, 3.4),
+  northing = c(0.1, 0.3, 0.0, 0.4, 1.2, 1.1, 1.4, 1.0, 2.1, 2.4, 2.0, 2.3)
+)
+
+wetland_spatial <- merge(wetland_monitoring, site_coordinates, by = "site")
+wetland_spatial_snapshot <- wetland_spatial[
+  wetland_spatial$year == max(wetland_spatial$year),
+  ,
+  drop = FALSE
+]
+
+set.seed(2026)
+species_names <- sprintf("sp_%02d", seq_len(24))
+comparative_data <- data.frame(
+  species = species_names,
+  habitat_specialisation = runif(length(species_names), -1, 1)
+)
+comparative_data$body_size <- 20 +
+  3 * comparative_data$habitat_specialisation +
+  rnorm(nrow(comparative_data), 0, 2)
+
+knitr::kable(
+  head(wetland_spatial_snapshot[, c("site", "year", "richness", "easting", "northing")]),
+  caption = "First rows of the one-year spatial snapshot used in the brms spatial sketch."
+)
+```
+
+```{r brms-spatial-map, fig.cap="Teaching coordinates for the optional spatial brms example. The points are simulated site coordinates, not real mapped locations.", fig.alt="Scatter plot of 12 wetland sites with easting on the horizontal axis and northing on the vertical axis. Points are labelled by site and coloured by species richness in the selected year."}
+ggplot2::ggplot(
+  wetland_spatial_snapshot,
+  ggplot2::aes(x = easting, y = northing, colour = richness, label = site)
+) +
+  ggplot2::geom_point(size = 3) +
+  ggplot2::geom_text(nudge_y = 0.12, size = 3.5, colour = "grey20") +
+  ggplot2::scale_colour_viridis_c(option = "D") +
+  ggplot2::coord_equal() +
+  ggplot2::labs(
+    x = "Simulated easting",
+    y = "Simulated northing",
+    colour = "Richness",
+    title = "Spatial teaching snapshot"
+  ) +
+  theme_tutorial()
+```
+
+## Bayesian example A: hierarchical dependence
+
+<div class="workshop-box">
+<p><strong>Question:</strong> How do we account for repeated observations from the same wetland site?</p>
+<p><strong>Plain-English idea:</strong> A varying intercept lets each site have its own baseline richness while sharing information across sites. This is partial pooling: site estimates are neither completely separate nor forced to be identical.</p>
+<p><strong>Run this code:</strong> copy the chunk below after installing <code>brms</code> and a Stan backend.</p>
+<p><strong>After you run it, inspect:</strong> the posterior interval for <code>temp_anomaly</code> and the group-level standard deviation for <code>site</code>.</p>
+<p><strong>Interpretation:</strong> the temperature coefficient is conditional on site-level baselines. The site standard deviation describes persistent among-site heterogeneity in richness.</p>
+<p><strong>Next step:</strong> check posterior predictive plots and whether site-level heterogeneity is large enough to matter biologically.</p>
+<p><strong>Common mistake:</strong> a site random intercept is not a temporal autocorrelation term. It handles persistent site differences, not year-to-year residual memory.</p>
+</div>
+
+```{r brms-hierarchical-example, eval=FALSE}
 set.seed(2026)
 
-m_bayes_ar1 <- brms::brm(
+m_bayes_hierarchical <- brms::brm(
+  richness ~ temp_anomaly + habitat_quality + poly(year_c, 2, raw = TRUE) +
+    (1 | site),
+  data = wetland_monitoring,
+  family = gaussian(),
+  prior = c(
+    brms::prior(normal(0, 2), class = "b"),
+    brms::prior(exponential(1), class = "sd"),
+    brms::prior(exponential(1), class = "sigma")
+  ),
+  chains = 4,
+  iter = 2000,
+  cores = 4,
+  seed = 2026,
+  control = list(adapt_delta = 0.95)
+)
+
+summary(m_bayes_hierarchical)
+brms::pp_check(m_bayes_hierarchical)
+```
+
+## Bayesian example B: temporal dependence
+
+<div class="workshop-box">
+<p><strong>Question:</strong> How do we model residual similarity among neighbouring years within each wetland?</p>
+<p><strong>Plain-English idea:</strong> An AR(1) term says that residuals from nearby years within the same site may be more similar than residuals far apart in time. The ecological mean model is still present; the AR term describes remaining temporal memory.</p>
+<p><strong>Run this code:</strong> the <code>brms::ar()</code> term is placed in the formula, with <code>time = year</code> and <code>gr = site</code> so the temporal structure applies within sites.</p>
+<p><strong>After you run it, inspect:</strong> the posterior for the AR parameter, the temperature effect and posterior predictive time-series checks.</p>
+<p><strong>Interpretation:</strong> a positive AR parameter means that years close together remain similar after the model accounts for temperature, habitat, year trend and site baseline.</p>
+<p><strong>Next step:</strong> compare posterior predictive behaviour through time, not just coefficient intervals.</p>
+<p><strong>Common mistake:</strong> do not use an AR term to hide an omitted ecological trend or missing covariate.</p>
+</div>
+
+```{r brms-temporal-example, eval=FALSE}
+m_bayes_temporal <- brms::brm(
   brms::bf(
     richness ~ temp_anomaly + habitat_quality + poly(year_c, 2, raw = TRUE) +
       (1 | site) + brms::ar(time = year, gr = site, p = 1)
@@ -1789,21 +2075,156 @@ m_bayes_ar1 <- brms::brm(
   ),
   chains = 4,
   iter = 2000,
-  cores = 4
+  cores = 4,
+  seed = 2026,
+  control = list(adapt_delta = 0.95)
 )
+
+summary(m_bayes_temporal)
+brms::pp_check(m_bayes_temporal)
 ```
 
-For phylogenetic models in `brms`, the pattern is to pass a known covariance
-matrix with `gr(species, cov = A)` and `data2 = list(A = A)`.
+## Bayesian example C: spatial dependence
 
-```{r brms-phylo-example, eval=FALSE}
-m_bayes_phylo <- brms::brm(
-  trait ~ predictor + (1 | brms::gr(species, cov = A)),
-  data = comparative_data,
-  data2 = list(A = phylogenetic_covariance_matrix),
+<div class="workshop-box">
+<p><strong>Question:</strong> How do we allow nearby wetland sites to have similar richness?</p>
+<p><strong>Plain-English idea:</strong> A Gaussian process is a smooth spatial surface. Sites close together can share information, and the model estimates how quickly similarity decays with distance.</p>
+<p><strong>Run this code:</strong> this sketch uses one year of data so that the spatial example is not mixed with the temporal example. In a real monitoring study, repeated years may require site-level and temporal terms as well.</p>
+<p><strong>After you run it, inspect:</strong> the GP standard deviation and length-scale. The standard deviation tells you the size of the spatial surface; the length-scale describes spatial range on the scale used by the GP predictors, so check the <code>brms</code> output and documentation before translating it back to metres or kilometres.</p>
+<p><strong>Interpretation:</strong> spatial structure is not just a prettier map. It changes the target from independent site observations to a spatially structured ecological field.</p>
+<p><strong>Next step:</strong> check whether coordinates, projection, boundaries and sampling scale make a smooth GP sensible.</p>
+<p><strong>Common mistake:</strong> do not treat arbitrary row order or site labels as coordinates. Spatial dependence needs actual spatial information.</p>
+</div>
+
+```{r brms-spatial-example, eval=FALSE}
+m_bayes_spatial <- brms::brm(
+  richness ~ temp_anomaly + habitat_quality +
+    brms::gp(easting, northing, cov = "matern32"),
+  data = wetland_spatial_snapshot,
+  family = gaussian(),
+  prior = c(
+    brms::prior(normal(0, 2), class = "b"),
+    brms::prior(exponential(1), class = "sigma"),
+    brms::prior(exponential(1), class = "sdgp")
+  ),
+  chains = 4,
+  iter = 2000,
+  cores = 4,
+  seed = 2026,
+  control = list(adapt_delta = 0.95)
+)
+
+summary(m_bayes_spatial)
+brms::conditional_effects(m_bayes_spatial)
+brms::pp_check(m_bayes_spatial)
+```
+
+Before changing GP priors, run:
+
+```{r brms-spatial-prior-check, eval=FALSE}
+brms::get_prior(
+  richness ~ temp_anomaly + habitat_quality +
+    brms::gp(easting, northing, cov = "matern32"),
+  data = wetland_spatial_snapshot,
   family = gaussian()
 )
 ```
+
+This is a teaching sketch with 12 simulated site coordinates. It is useful for
+learning the syntax, but not enough by itself to support a strong spatial
+inference claim. A real spatial analysis should check sample size, coordinate
+projection, boundary effects, anisotropy, nonstationarity and whether a smooth
+surface matches the sampling design.
+
+## Bayesian example D: phylogenetic dependence
+
+<div class="workshop-box">
+<p><strong>Question:</strong> How do we account for related species being more similar than unrelated species?</p>
+<p><strong>Plain-English idea:</strong> A phylogenetic model uses a covariance matrix derived from a tree. In <code>brms</code>, the matrix is passed through <code>data2</code> and used with <code>brms::gr(species, cov = A)</code>.</p>
+<p><strong>Run this code:</strong> the example simulates a tiny tree only for teaching. Replace it with the tree and species names justified for your analysis.</p>
+<p><strong>After you run it, inspect:</strong> the phylogenetic group-level standard deviation and the posterior interval for the ecological predictor.</p>
+<p><strong>Interpretation:</strong> the model asks whether the predictor explains trait differences after allowing related species to share evolutionary history.</p>
+<p><strong>Next step:</strong> check species names, tree pruning, covariance scaling and prior sensitivity.</p>
+<p><strong>Common mistake:</strong> do not pass a tree whose tip labels do not match the species column. The covariance matrix row names must correspond to the grouping levels.</p>
+</div>
+
+```{r brms-phylogenetic-data, eval=FALSE}
+library(ape)
+
+tree <- ape::rtree(
+  n = length(species_names),
+  tip.label = species_names
+)
+
+A <- ape::vcv.phylo(tree, corr = TRUE)
+```
+
+```{r brms-phylogenetic-example, eval=FALSE}
+m_bayes_phylogenetic <- brms::brm(
+  body_size ~ habitat_specialisation +
+    (1 | brms::gr(species, cov = A)),
+  data = comparative_data,
+  data2 = list(A = A),
+  family = gaussian(),
+  prior = c(
+    brms::prior(normal(0, 2), class = "b"),
+    brms::prior(exponential(1), class = "sd"),
+    brms::prior(exponential(1), class = "sigma")
+  ),
+  chains = 4,
+  iter = 2000,
+  cores = 4,
+  seed = 2026,
+  control = list(adapt_delta = 0.95)
+)
+
+summary(m_bayes_phylogenetic)
+brms::pp_check(m_bayes_phylogenetic)
+```
+
+## After fitting a brms model
+
+<div class="workshop-box">
+<p><strong>Question:</strong> What should I check after a Bayesian model finishes?</p>
+<p><strong>Plain-English idea:</strong> Bayesian output is not a single coefficient table. You need to check computation, posterior uncertainty and whether simulated data from the model resemble the observed data.</p>
+<p><strong>Run this code:</strong> replace <code>m_bayes_temporal</code> with whichever fitted model you are checking.</p>
+<p><strong>After you run it, inspect:</strong> <code>Rhat</code>, <code>Bulk_ESS</code>, <code>Tail_ESS</code>, divergent-transition warnings, trace plots, posterior predictive checks, posterior intervals and <code>loo()</code> diagnostics if models are compared.</p>
+<p><strong>Interpretation:</strong> a clean posterior workflow supports interpretation; it does not rescue a model with the wrong dependence structure or a mismatched validation design.</p>
+<p><strong>Next step:</strong> report priors, diagnostics, software versions and sensitivity checks.</p>
+<p><strong>Common mistake:</strong> do not report only posterior means. Intervals, predictive checks and convergence diagnostics are part of the result.</p>
+</div>
+
+```{r brms-after-fitting, eval=FALSE}
+summary(m_bayes_temporal)
+plot(m_bayes_temporal)
+brms::pp_check(m_bayes_temporal)
+brms::conditional_effects(m_bayes_temporal)
+brms::loo(m_bayes_temporal)
+```
+
+Use this mini-rubric when reading the output:
+
+- **Computation**: in `summary()`, find `Rhat`, `Bulk_ESS` and `Tail_ESS`. Values of
+  `Rhat` close to 1 and reasonably large effective sample sizes support stable
+  posterior summaries.
+- **Sampler warnings**: read the console messages after fitting. Divergent transitions,
+  maximum tree-depth warnings or repeated low effective sample sizes mean the fit
+  needs attention before biological interpretation.
+- **Trace plots**: in `plot(model)`, chains should mix rather than form separated
+  bands, long drifts or stuck segments.
+- **Posterior predictive checks**: in `pp_check(model)`, simulated data should resemble
+  the observed data in features that matter for the question, such as spread, tails,
+  zeros or temporal pattern.
+- **Biological interval**: read posterior intervals for the predictor or dependence
+  parameter that answers the ecological question, not only the posterior mean.
+- **Model comparison**: if you use `loo(model)`, inspect Pareto-`k` warnings before
+  trusting expected log predictive density differences.
+
+If Stan reports divergent transitions after warmup, treat that as a diagnostic
+warning rather than a harmless message. Reconsider scaling, priors, model
+complexity and sampler controls such as `adapt_delta`. If a model becomes very
+slow, first fit a simpler version and confirm that the ecological question
+still requires the more complex dependence structure.
 
 # Optional real ecological data sidebar
 
