@@ -4,7 +4,10 @@
 
 This is a repository containing the reproducible code for the illustrative examples from 
 
-> Yefeng Yang, Jinming Pan, David Warton, Shinichi Nakagawa. Robust approaches to modelling fragile conservation biology: flexible solutions to non-normal, hierarchical, temporal, spatial, and phylogenetic data. 2026.
+> Yefeng Yang, Jinming Pan, David Warton, Shinichi Nakagawa. Robust modelling and inference for conservation biology: flexible statistical solutions for non-normal, hierarchical, temporal, spatial, and phylogenetic data. 2026.
+
+
+<img width="865" height="1083" alt="image" src="https://github.com/user-attachments/assets/98448ef8-e2e7-44dd-a2fb-44226b9cc85b" />
 
 
 ### `Script`
