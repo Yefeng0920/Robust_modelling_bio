@@ -1,4 +1,4 @@
-# Robust approaches to modelling fragile conservation biology: flexible solutions to non-normal, hierarchical, temporal, spatial, and phylogenetic data
+# Robust modelling and inference for conservation biology: flexible statistical solutions for non-normal, hierarchical, temporal, spatial, and phylogenetic data
 
 ## Overview
 
