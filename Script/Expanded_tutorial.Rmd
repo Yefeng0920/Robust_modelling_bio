@@ -1,7 +1,7 @@
 ---
-title: "Robust modelling for dependent biodiversity data: a code-along tutorial"
+title: "Robust modelling and inference for dependent data: a practical hands-on tutorial"
 author: "Yefeng Yang, Jinming Pan, David Warton, Shinichi Nakagawa"
-date: "2026-07-04"
+date: "Aug 2026"
 output:
   html_document:
     toc: true
@@ -14,12 +14,11 @@ output:
 pkgdown:
   as_is: true
 ---
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
   echo = TRUE,
   message = FALSE,
-  warning = FALSE,
+  warning = TRUE,
   fig.width = 9.2,
   fig.height = 5.8,
   dpi = 120,
@@ -93,28 +92,59 @@ make_ar1 <- function(n, phi = 0.65, sigma = 1) {
 }
 
 lag_cor_by_group <- function(data, residual, group = "site", time = "year",
-                             max_lag = 6) {
-  data <- data[order(data[[group]], data[[time]]), ]
-  pieces <- split(data, data[[group]])
+                             max_lag = 6, require_regular = TRUE) {
+  stopifnot(all(c(residual, group, time) %in% names(data)))
+  data <- data[order(data[[group]], data[[time]]), , drop = FALSE]
+  pieces <- split(data, data[[group]], drop = TRUE)
+
+  if (require_regular) {
+    irregular <- vapply(pieces, function(z) {
+      gaps <- diff(z[[time]])
+      length(gaps) > 0L && length(unique(gaps)) > 1L
+    }, logical(1))
+    if (any(irregular)) {
+      stop(
+        "lag_cor_by_group() uses observation-order lags and requires regular time steps. ",
+        "Use a continuous-time or distance-based diagnostic for irregular series.",
+        call. = FALSE
+      )
+    }
+  }
+
+  summarise_correlations <- function(values) {
+    values <- values[is.finite(values)]
+    if (!length(values)) {
+      return(c(mean = NA_real_, min = NA_real_, max = NA_real_, n = 0))
+    }
+
+    # Fisher-z averaging is less biased than an arithmetic mean of correlations.
+    clipped <- pmin(pmax(values, -0.999999), 0.999999)
+    c(
+      mean = tanh(mean(atanh(clipped))),
+      min = min(values),
+      max = max(values),
+      n = length(values)
+    )
+  }
 
   out <- lapply(seq_len(max_lag), function(lag) {
     values <- vapply(pieces, function(z) {
       r <- z[[residual]]
-      if (length(r) <= lag || stats::sd(r, na.rm = TRUE) == 0) {
+      keep <- is.finite(r)
+      r <- r[keep]
+      if (length(r) <= lag || stats::sd(r) == 0) {
         return(NA_real_)
       }
-      stats::cor(
-        r[(lag + 1):length(r)],
-        r[1:(length(r) - lag)],
-        use = "complete.obs"
-      )
+      stats::cor(r[(lag + 1):length(r)], r[1:(length(r) - lag)])
     }, numeric(1))
 
+    s <- summarise_correlations(values)
     data.frame(
       lag = lag,
-      mean_autocorrelation = mean(values, na.rm = TRUE),
-      min_site = min(values, na.rm = TRUE),
-      max_site = max(values, na.rm = TRUE)
+      mean_autocorrelation = unname(s["mean"]),
+      min_site = unname(s["min"]),
+      max_site = unname(s["max"]),
+      n_sites = as.integer(s["n"])
     )
   })
 
@@ -137,6 +167,28 @@ plot_lag_correlation <- function(tab, main = "Residual autocorrelation by lag") 
       y = "Mean within-site residual correlation"
     ) +
     theme_tutorial()
+}
+
+plot_lag_correlation_base <- function(tab, main = "Residual autocorrelation by lag") {
+  graphics::plot(
+    tab$lag,
+    tab$mean_autocorrelation,
+    type = "b",
+    pch = 19,
+    ylim = range(c(tab$min_site, tab$max_site, 0), na.rm = TRUE),
+    xlab = "Lag in years",
+    ylab = "Mean within-site residual correlation",
+    main = main
+  )
+  graphics::abline(h = 0, lty = 2, col = "grey45")
+  graphics::segments(
+    x0 = tab$lag,
+    y0 = tab$min_site,
+    x1 = tab$lag,
+    y1 = tab$max_site,
+    col = "grey55"
+  )
+  invisible(tab)
 }
 
 rmse <- function(observed, predicted) {
@@ -211,7 +263,7 @@ needed_pkgs(c("ggplot2", "nlme", "glmmTMB", "MASS", "sandwich", "lmtest"))
     if (stored === "light" || stored === "dark") {
       return stored;
     }
-    return "dark";
+    return "light";
   }
 
   function applyTheme(theme) {
@@ -672,69 +724,114 @@ html[data-theme="dark"] .theme-toggle-icon.moon {
 </div>
 
 <div class="tutorial-hero">
-<div class="eyebrow">Code-along workshop for biodiversity data</div>
-<div class="hero-title">Robust modelling, one runnable step at a time</div>
+<div class="eyebrow">Supplementary code tutorial</div>
+<div class="hero-title">A practical workflow for dependent biodiversity data</div>
 <div class="hero-copy">
-Start with a wetland monitoring dataset, fit a model that is too simple, then
-repair the analysis piece by piece: ecological structure, residual dependence,
-site effects, heteroscedasticity, outliers, estimands, robust uncertainty, and
-prediction checks. The page is designed so a reader can run the chunks in order
-and always know what question the next model answers.
+Using a simulated wetland monitoring dataset, this tutorial begins with an
+oversimplified model and then examines ecological structure, residual dependence,
+site effects, heteroscedasticity, influential observations, estimands, robust
+uncertainty and prediction. The examples can be run in sequence, with each model
+linked to a specific scientific question.
 </div>
 <div class="hero-meta" aria-label="Tutorial features">
-<span>Runs from a fresh R session</span>
-<span>Ecology-first interpretation</span>
+<span>Core examples run from a fresh R session</span>
+<span>Ecological interpretation throughout</span>
 <span>Captions and alt text</span>
-<span>Advanced code clearly optional</span>
+<span>Optional extensions clearly marked</span>
 </div>
 <div class="workflow-grid" aria-label="Workshop route">
-<div class="workflow-step"><strong>1. See the pattern</strong><span>Plot richness, residuals, and lag correlation before trusting a slope.</span></div>
-<div class="workflow-step"><strong>2. Add biology</strong><span>Separate ecological signal from residual dependence.</span></div>
-<div class="workflow-step"><strong>3. Model structure</strong><span>Use GLS, GLMMs, and variance models for the right source of dependence.</span></div>
-<div class="workflow-step"><strong>4. Check decisions</strong><span>Use diagnostics, sensitivity checks, and blocked validation.</span></div>
+<div class="workflow-step"><strong>1. Examine the pattern</strong><span>Plot richness, residuals and lag correlation before interpreting a slope.</span></div>
+<div class="workflow-step"><strong>2. Add ecological structure</strong><span>Separate systematic ecological signal from residual dependence.</span></div>
+<div class="workflow-step"><strong>3. Represent dependence</strong><span>Match random effects, correlation and variance structures to the data.</span></div>
+<div class="workflow-step"><strong>4. Assess robustness</strong><span>Use diagnostics, sensitivity analyses and blocked validation.</span></div>
 </div>
 </div>
+
+# Start with the scientific question, not the software
+
+There is no universally best method for dependent data. The appropriate analysis depends first on the scientific question and only then on the available model or software. Two researchers analysing the same monitoring dataset may reasonably choose different approaches because they seek different quantities, predictions or sources of ecological variation.
+
+Before fitting a model, distinguish four related decisions:
+
+1. **What is the goal of the analysis?**  
+
+   An inferential analysis asks what the data suggest about an ecological relationship or model parameter. A predictive analysis asks how accurately outcomes can be predicted for new observations, sites, species or time periods. An exploratory analysis searches for patterns that can motivate more specific questions.
+
+2. **What quantity should the model estimate?**  
+
+   This target quantity is the *estimand*. It might be an average association across a monitoring network, a change within the same wetland through time, a site-specific or species-specific response, variation among species in their responses, or a prediction for an unsampled location. Different models can answer different questions even when they use the same response and predictors.
+
+3. **Why might the observations be dependent?**  
+
+   Measurements may share information because they come from the same site, population, species, observer or study; were collected close together in time or space; or involve species with shared evolutionary history. The analysis should represent the aspects of this structure that matter for the scientific question.
+
+4. **How confidently can the dependence structure be specified?**  
+   When the mechanism is scientifically meaningful and sufficiently supported by the data, it may be represented explicitly through random effects, correlation functions or structured latent processes. When the precise structure is uncertain, robust standard errors, dependence-aware resampling and sensitivity analyses can provide complementary protection. These strategies are not mutually exclusive.
+
+## How scientific aims lead to different analytical choices
+
+Consider annual measurements of species richness from the same wetlands. The appropriate starting point depends on what the researcher wants to learn.
+
+| Scientific aim                                                             | Example question                                                                                                        | Target of the analysis                                                             | Useful starting point                                                                                                                   |
+|:---------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------------------|:---------------------------------------------------------------------------------- |:----------------------------------------------------------------------------------------------------------------------------------------|
+| Estimate an ecological association while representing repeated observations| How is richness associated with temperature after accounting for persistent differences among wetlands?                 | A regression association conditional on the specified site and temporal structure  | LMM or GLMM, potentially combined with a temporal correlation structure; GLS for Gaussian responses with structured residual covariance |
+| Estimate an average association across a population                        | What is the average change in richness across the monitoring network for a one-unit increase in temperature?            | A population-averaged association                                                  | GEE                                                                                                                                     |
+| Estimate change within the same ecological unit                            | Are years warmer than a wetland’s usual conditions associated with lower richness within that wetland?                  | A within-wetland association                                                       | Fixed-effects model or a within-between model                                                                                           |
+| Quantify ecological heterogeneity                                          | How much does the association between temperature and richness vary among wetlands or species?                          | Variation in slopes among ecological units                                         | Random-slope LMM or GLMM                                                                                                                |
+| Estimate a dependence parameter                                            | How persistent are unexplained departures from the expected richness trajectory between neighbouring years?             | Temporal correlation after accounting for the systematic component                 | GLS, LMM or GLMM with an autoregressive structure                                                                                       |
+| Protect inference when the dependence model is uncertain                   | Is the estimated temperature association still supported without assuming an exact within-wetland covariance structure? | The coefficient from the fitted model with dependence-robust uncertainty           | Cluster-robust variance estimation or dependence-aware resampling                                                                       |
+| Predict new observations                                                   | How accurately can richness be forecast for future years or unsampled wetlands?                                         | Out-of-sample predictive performance                                               | A dependence-aware predictive model evaluated using temporally or spatially blocked validation                                          |
+
+These are starting points rather than rigid rules. For example, an LMM can estimate average regression coefficients, variation among wetlands and wetland-specific predictions within the same model. Robust variance estimation changes how uncertainty is calculated but does not by itself change the coefficient being estimated. Biological interpretation depends on the complete model, including its link function, random effects or covariance structure, and the population to which the conclusion applies.
+
+## Write down the target before running the code
+
+Before selecting a package or copying a model formula, complete five statements:
+
+1. **My scientific question is:** ...
+
+2. **The quantity I want to estimate or predict is:** ...
+
+3. **My observations may be dependent because:** ...
+
+4. **I want my conclusions to apply to:** ...
+
+5. **I will judge the analysis by:** ...
+
+The fourth statement defines the intended scope of inference. A conclusion about the wetlands observed is not necessarily a conclusion about all wetlands, and a model that predicts future observations from monitored sites may not predict an unsampled site. The fifth statement distinguishes goals such as calibrated uncertainty, estimation of ecological heterogeneity and out-of-sample prediction.
+
+Each model in the tutorial is therefore introduced by asking:
+
+> **What scientific question does this model answer, and what assumptions are required
+> for that answer?**
+
+The aim is to connect the scientific question, estimand, dependence structure, inferential method and validation design, rather than to identify one universally superior model.
 
 # Setup: how to run this tutorial
 
-This tutorial is a code-along page. The core examples use a small set of packages.
-Advanced examples are shown so that readers can copy and run them after installing
-the relevant packages.
+This tutorial is a code-along page. The core examples use a small set of packages. Advanced examples are shown so that readers can copy and run them after installing the relevant packages.
 
-Render this page from the repository root with:
+From the directory containing the file, render the page with:
 
 ```{r render-command, eval=FALSE}
-rmarkdown::render("Script/Expanded_tutorial.Rmd")
+rmarkdown::render("Expanded_tutorial.Rmd")
 ```
 
 If a package is missing, the tutorial does one of two things:
 
-- Core code uses base R, `ggplot2`, `nlme`, `glmmTMB`, `sandwich`, `lmtest`,
-  `MASS`, and `sessioninfo` where available.
+- Core code uses base R, `ggplot2`, `nlme`, `glmmTMB`, `sandwich`, `lmtest`, `MASS`, and `sessioninfo` where available.
+
 - Advanced chunks are displayed but skipped if their package is unavailable.
 
-Minimal install for the core tutorial:
+Minimal install for the core tutorial: `install.packages(c( "rmarkdown", "knitr", "ggplot2", "nlme", "glmmTMB", "sandwich", "lmtest", "MASS", "sessioninfo"))`
 
-```{r minimal-install, eval=FALSE}
-install.packages(c(
-  "rmarkdown", "knitr", "ggplot2", "nlme", "glmmTMB",
-  "sandwich", "lmtest", "MASS", "sessioninfo"
-))
-```
+Full install for optional sections: `install.packages(c("DHARMa", "geepack", "plm", "brms", "clubSandwich"))`
 
-Full install for optional sections:
 
-```{r full-install, eval=FALSE}
-install.packages(c(
-  "DHARMa", "geepack", "plm", "brms", "clubSandwich"
-))
-```
-
-On an ordinary laptop, the core examples should render in under a minute after
-packages are installed. The Bayesian section is intentionally not run by default.
+On an ordinary laptop, the core examples should render in under a minute after packages are installed. The Bayesian section is intentionally not run by default.
 
 <div class="accessibility-box">
-<p><strong>How to use this page.</strong> If you are new to these models, read the blue workshop box first, run the code chunk immediately below it, and then read the interpretation before moving on. The advanced sections are labelled optional. You can learn the core workflow without installing every package in the matrix.</p>
+<p><strong>How to use this page.</strong> If these models are new to you, begin with the question and guidance box, run the code immediately below it, and compare the output with the accompanying explanation. The advanced sections are labelled optional, and the core workflow does not require every package in the matrix.</p>
 <p><strong>Accessibility choices.</strong> Plots have captions and alt text in the rendered HTML. Tables have captions where they carry an interpretation. Colour is used to help scanning, but important contrasts are also described in text, point shape, line position, or table values.</p>
 </div>
 
@@ -754,9 +851,7 @@ Small glossary for the code-along:
 <details>
 <summary><strong>Check package availability on this machine</strong></summary>
 
-This table is useful for troubleshooting, but you do not need to study it before
-starting the tutorial. The core workflow runs when the core packages are
-installed; optional packages are skipped or shown without running.
+This table is useful for troubleshooting, but you do not need to study it before starting the tutorial. The core workflow runs when the core packages are installed; optional packages are skipped or shown without running.
 
 ```{r package-availability}
 packages <- data.frame(
@@ -797,13 +892,9 @@ explicitly labelled and either skipped when packages are missing or shown with
 # Before you use your own data
 
 <div class="workshop-box">
-<p><strong>Question.</strong> How do I adapt the tutorial to my dataset?</p>
-<p><strong>Plain-English idea.</strong> First map your data columns to the concepts in the tutorial. Then check whether the repeated measurements and time steps match the model you want to fit.</p>
-<p><strong>Run this code.</strong> The chunk below is a template, not code that runs on the simulated data.</p>
-<p><strong>Look at this output.</strong> You want one row per observation, clear site/year identifiers, and no surprise duplicate rows.</p>
-<p><strong>Interpretation.</strong> AR(1) assumes an ordered time variable. Discrete AR(1) examples are easiest when each site has regular time steps.</p>
-<p><strong>Next step.</strong> Rename your columns to the tutorial names, or edit the formulas to match your column names.</p>
-<p><strong>Common mistake.</strong> Do not fit <code>corAR1(form = ~ year | site)</code> before checking whether years are ordered and whether missing years are meaningful gaps.</p>
+<p><strong>Question:</strong> How do I adapt the tutorial to my dataset?</p>
+<p>First map your columns to the concepts used here, then check whether the repeated measurements and time steps suit the proposed model. The template below should produce one row per observation, unambiguous site and year identifiers, and no unexpected duplicates.</p>
+<p><strong>Keep in mind:</strong> a discrete AR(1) structure assumes ordered observations and is most straightforward with regular time steps. Check whether missing years represent genuine gaps before fitting <code>corAR1(form = ~ year | site)</code>.</p>
 </div>
 
 ```{r own-data-template, eval=FALSE}
@@ -843,30 +934,22 @@ time_gaps
 # The problem: my residuals are autocorrelated
 
 <div class="workshop-box">
-<p><strong>Question.</strong> I have biodiversity observations collected through time, space, sites, species, or studies. How do I know whether I can treat them as independent?</p>
-<p><strong>Plain-English idea.</strong> Observations can share ecological history. Nearby years, nearby sites, repeated surveys from the same wetland, or related species may be more similar than distant ones.</p>
-<p><strong>Run this code.</strong> We start with a simulated wetland monitoring dataset where the truth is known.</p>
-<p><strong>Look at this output.</strong> The first plot asks whether nearby years look more similar than distant years.</p>
-<p><strong>Interpretation.</strong> Autocorrelation is not a technical nuisance. It is often a biological clue and an uncertainty problem.</p>
-<p><strong>Next step.</strong> Separate the systematic ecological signal from the remaining residual dependence.</p>
-<p><strong>Common mistake.</strong> Do not diagnose autocorrelation in the raw response and immediately add an AR(1) term. First ask whether the pattern is a missing ecological predictor or trend.</p>
+<p><strong>Question:</strong> Can observations collected across times, places, sites, species or studies be treated as independent?</p>
+<p>Such observations often share ecological history. Nearby years or sites, repeated surveys of the same wetland, and related species may therefore be more alike than distant observations. The simulated dataset below makes this structure visible before we separate systematic ecological signal from residual dependence.</p>
+<p><strong>Keep in mind:</strong> autocorrelation in the raw response does not by itself justify an AR(1) term. The pattern may instead reflect an omitted ecological predictor or trend.</p>
 </div>
 
-The manuscript argues that dependence should be handled by the scientific aim:
-inference, prediction, or exploration. This tutorial makes that argument practical.
-We will fit the same ecological story several ways and keep asking: What question
-does this model answer?
+The worked examples follow a central principle of the Review: dependence should be
+handled in relation to the scientific aim, whether inference, prediction or
+exploration. We fit the same ecological system in several ways and ask what question
+each model answers.
 
 # Signal, distribution, and dependence
 
 <div class="workshop-box">
-<p><strong>Question.</strong> What do people mean by systematic structure, residuals, and residual dependence?</p>
-<p><strong>Plain-English idea.</strong> A model has a target, such as a mean, a location, a median, or a transformed mean. Dependence is then assessed in what is left over after modelling the target.</p>
-<p><strong>Run this code.</strong> We simulate a tiny 20-year example and draw four panels.</p>
-<p><strong>Look at this output.</strong> The panels show observed data, the systematic component, residuals, and residual dependence.</p>
-<p><strong>Interpretation.</strong> The raw response is not always "mean plus error." For GLMs, the systematic part often acts through a link function. For robust or quantile models, the target may be a median or another location parameter.</p>
-<p><strong>Next step.</strong> Use this decomposition as a thinking tool, not as a universal equation.</p>
-<p><strong>Common mistake.</strong> Normality is not required for the Gauss-Markov result about least-squares optimality. Normality matters for exact small-sample inference in classical linear models.</p>
+<p><strong>Question:</strong> What are systematic structure, residuals and residual dependence?</p>
+<p>A model targets a quantity such as a mean, median, other location parameter or transformed mean. The four panels below distinguish the observed data, fitted systematic component, residuals and correlation among those residuals. This is a conceptual decomposition rather than a universal equation.</p>
+<p><strong>Keep in mind:</strong> in a GLM the systematic component usually acts through a link function, whereas robust or quantile models may target a different location parameter. Normality is not required for the Gauss–Markov optimality result, although it underpins exact small-sample inference in the classical linear model.</p>
 </div>
 
 ```{r concept-figure, fig.cap="A small teaching example showing observed data, the fitted systematic component, residuals, and residual autocorrelation.", fig.alt="Four-panel plot. Panel 1 shows observed richness through 20 years. Panel 2 overlays a curved fitted systematic component on the same data. Panel 3 shows residuals around zero through time. Panel 4 shows an autocorrelation function for the residuals."}
@@ -892,22 +975,19 @@ acf(tiny_model_resid, main = "4. Residual dependence")
 par(old_par)
 ```
 
-This section addresses the reviewers' request to replace the overly simple
-"response = mean + error" framing with a more accurate teaching picture.
+This view is more general than writing the response simply as "mean plus error" and helps separate model specification from the remaining dependence.
 
 # Build the teaching dataset
 
 <div class="workshop-box">
-<p><strong>Question.</strong> Can we create one ecological example that carries the tutorial?</p>
-<p><strong>Plain-English idea.</strong> We simulate annual species richness across wetland sites. Temperature and habitat quality affect richness. Sites differ in baseline richness. Unmeasured ecological conditions persist through time.</p>
-<p><strong>Run this code.</strong> The code creates <code>wetland_monitoring</code>.</p>
-<p><strong>Look at this output.</strong> We inspect rows and plot trajectories.</p>
-<p><strong>Interpretation.</strong> In real data, we do not know the truth. Here we simulate the truth so we can see what each model misses.</p>
-<p><strong>Next step.</strong> Start with a simple model, then add structure deliberately.</p>
-<p><strong>Common mistake.</strong> A realistic simulation is not proof that a method works universally. It is a teaching microscope.</p>
+<p><strong>Worked example:</strong> annual species richness is simulated for 12 wetland sites. Temperature and habitat quality affect richness, sites differ in baseline richness, and unmeasured ecological conditions persist through time.</p>
+<p>The code creates <code>wetland_monitoring</code>, displays its first rows and plots the site trajectories. Because the data-generating process is known, we can see what is omitted as the analysis develops from a simple model to richer alternatives.</p>
+<p><strong>Keep in mind:</strong> simulation provides a controlled teaching example, not evidence that any method performs well under all conditions.</p>
 </div>
 
 ```{r simulate-wetland-data}
+set.seed(2026)
+
 sites <- paste0("W", sprintf("%02d", 1:12))
 years <- 2001:2020
 
@@ -1014,13 +1094,9 @@ ggplot2::ggplot(one_site, ggplot2::aes(year, richness)) +
 # Example 1: fit a naive model
 
 <div class="workshop-box">
-<p><strong>Question.</strong> What happens if we fit a simple temperature-richness model and pretend all rows are independent?</p>
-<p><strong>Plain-English idea.</strong> A slope can be estimated even when independence is wrong, but the uncertainty can be too optimistic.</p>
-<p><strong>Run this code.</strong> Fit an ordinary linear model.</p>
-<p><strong>Look at this output.</strong> Inspect the coefficient table and residual autocorrelation.</p>
-<p><strong>Interpretation.</strong> This model estimates a temperature association but ignores habitat, site differences, and temporal memory.</p>
-<p><strong>Next step.</strong> Add plausible ecological structure before treating autocorrelation as a residual problem.</p>
-<p><strong>Common mistake.</strong> A small p-value is not enough if the standard error is wrong.</p>
+<p><strong>Question:</strong> What happens if a simple temperature–richness model treats every row as independent?</p>
+<p>The ordinary linear model provides a slope, but it omits habitat, persistent site differences and temporal memory. These omissions can alter the estimated association as well as make its uncertainty too optimistic. Inspect both the coefficient table and the within-site residual autocorrelation.</p>
+<p><strong>Next:</strong> add plausible ecological structure before deciding that the remaining pattern is a residual-correlation problem. A small p-value is not persuasive when the model or its standard error is poorly specified.</p>
 </div>
 
 ```{r naive-model}
@@ -1064,13 +1140,9 @@ plot_lag_correlation(naive_lag, "Naive model residual autocorrelation")
 # Example 2: add the systematic structure first
 
 <div class="workshop-box">
-<p><strong>Question.</strong> Is the apparent dependence really residual autocorrelation, or did we omit ecological structure?</p>
-<p><strong>Plain-English idea.</strong> Autocorrelation should be diagnosed after accounting for plausible biology.</p>
-<p><strong>Run this code.</strong> Add habitat quality and a smooth-enough year trend.</p>
-<p><strong>Look at this output.</strong> Compare the temperature effect and residual lag correlations before and after adding structure.</p>
-<p><strong>Interpretation.</strong> Raw temporal structure can be signal. Adding ecological structure may reduce, change, or reveal residual autocorrelation. What matters is not whether the diagnostic disappears immediately, but whether we now know what remains to model.</p>
-<p><strong>Next step.</strong> If residual autocorrelation remains, model it directly.</p>
-<p><strong>Common mistake.</strong> Do not use an AR(1) term to hide an omitted predictor or an obvious trend.</p>
+<p><strong>Question:</strong> Does the apparent dependence reflect residual autocorrelation or omitted ecological structure?</p>
+<p>Add habitat quality and a quadratic year trend, then compare the temperature coefficient and residual lag correlations with the naive model. Temporal structure in the raw data may represent ecological signal; accounting for that signal can reduce, alter or reveal the dependence left in the residuals.</p>
+<p><strong>Next:</strong> model residual autocorrelation directly if a meaningful pattern remains. An AR(1) term should not be used to absorb an omitted predictor or an obvious trend.</p>
 </div>
 
 ```{r systematic-model}
@@ -1129,36 +1201,46 @@ knitr::kable(
 )
 ```
 
-In this simulated dataset, adding habitat quality and a year trend changes the
-temperature estimate and clarifies the ecological signal, but it does not remove
-residual temporal dependence. The lag-1 residual autocorrelation is still about
-`r round(systematic_lag$mean_autocorrelation[systematic_lag$lag == 1], 2)`, so the
-next step is to model residual temporal dependence directly rather than declare
-the problem solved.
+In this simulated dataset, adding habitat quality and a year trend changes the temperature estimate and clarifies the ecological signal, but it does not remove residual temporal dependence. The lag-1 residual autocorrelation is still about
+`r round(systematic_lag$mean_autocorrelation[systematic_lag$lag == 1], 2)`, so the next step is to model residual temporal dependence directly rather than declare the problem solved.
 
 # Example 3: model residual temporal dependence with GLS
 
 <div class="workshop-box">
-<p><strong>Question.</strong> What if residuals are still more similar within nearby years after modelling the ecological signal?</p>
-<p><strong>Plain-English idea.</strong> GLS keeps the same systematic component but specifies a residual correlation structure.</p>
-<p><strong>Run this code.</strong> Fit a GLS model with AR(1) residual correlation within each wetland site.</p>
-<p><strong>Look at this output.</strong> Compare the coefficient standard errors and the estimated AR(1) parameter.</p>
-<p><strong>Interpretation.</strong> The biology part is the same, but uncertainty changes because the residual dependence is modelled.</p>
-<p><strong>Next step.</strong> Ask whether the AR(1) structure is biologically plausible and sufficiently supported by the sampling design.</p>
-<p><strong>Common mistake.</strong> Fitting <code>gls()</code> without a <code>correlation =</code> argument does not model temporal dependence.</p>
+<p><strong>Question:</strong> How can we represent residual similarity between neighbouring years?</p>
+<p>Generalized least squares (GLS) retains the same systematic component while specifying AR(1) residual correlation within each wetland. Compare the coefficient standard errors and inspect the estimated correlation parameter.</p>
+<p><strong>Keep in mind:</strong> the AR(1) structure should be biologically plausible and supported by the sampling design. Calling <code>gls()</code> without a <code>correlation =</code> argument does not model temporal dependence.</p>
 </div>
 
 ```{r gls-ar1}
-m_gls_ar1 <- nlme::gls(
-  richness ~ temp_anomaly + habitat_quality + poly(year_c, 2, raw = TRUE),
+gls_formula <- richness ~ temp_anomaly + habitat_quality +
+  poly(year_c, 2, raw = TRUE)
+
+# Use maximum likelihood when comparing alternative dependence structures.
+m_gls_ind_ml <- nlme::gls(
+  gls_formula,
+  data = wetland_monitoring,
+  method = "ML"
+)
+
+m_gls_ar1_ml <- nlme::gls(
+  gls_formula,
   correlation = nlme::corAR1(form = ~ year | site),
   data = wetland_monitoring,
   method = "ML"
 )
 
 knitr::kable(
+  AIC(m_gls_ind_ml, m_gls_ar1_ml),
+  caption = "Information-criterion comparison of independence and AR(1) residual structures with the same systematic component."
+)
+
+# After selecting the dependence structure, refit with REML for estimation.
+m_gls_ar1 <- update(m_gls_ar1_ml, method = "REML")
+
+knitr::kable(
   tidy_coef(m_gls_ar1),
-  caption = "GLS model with the same systematic terms and AR(1) residual correlation within site."
+  caption = "REML-fitted GLS model with the same systematic terms and AR(1) residual correlation within site."
 )
 ```
 
@@ -1184,13 +1266,9 @@ knitr::kable(
 # Example 4: model site-level dependence
 
 <div class="workshop-box">
-<p><strong>Question.</strong> How do we handle repeated measurements from the same wetland?</p>
-<p><strong>Plain-English idea.</strong> A random site intercept allows each wetland to have its own baseline richness.</p>
-<p><strong>Run this code.</strong> Fit a Gaussian mixed model with <code>glmmTMB</code>.</p>
-<p><strong>Look at this output.</strong> Inspect the fixed effects and the site-level variance component.</p>
-<p><strong>Interpretation.</strong> Persistent differences among sites are not the same as AR(1) residual memory within a site.</p>
-<p><strong>Next step.</strong> Decide whether the main dependence is grouping, temporal memory, or both.</p>
-<p><strong>Common mistake.</strong> A random intercept does not automatically remove residual temporal autocorrelation.</p>
+<p><strong>Question:</strong> How should repeated measurements from the same wetland be represented?</p>
+<p>A random intercept allows each wetland to have its own baseline richness. Fit the Gaussian mixed model and inspect both the fixed effects and site-level variance component.</p>
+<p><strong>Keep in mind:</strong> persistent differences among sites are distinct from AR(1) residual memory within a site. A random intercept does not automatically remove temporal autocorrelation.</p>
 </div>
 
 ```{r site-status, echo=FALSE, results='asis'}
@@ -1211,19 +1289,15 @@ knitr::kable(
 summary(m_site)$varcor
 ```
 
-This connects directly to random-effect syntax in the manuscript's Table 1:
+This connects directly to the random-effect syntax in Table 1 of the Review:
 `(1 | site)` means "allow wetland sites to differ in baseline richness."
 
 # Example 5: combine site structure and temporal dependence
 
 <div class="workshop-box">
-<p><strong>Question.</strong> Can hierarchical dependence and temporal residual dependence coexist?</p>
-<p><strong>Plain-English idea.</strong> Yes. A site can have a persistent baseline and also show year-to-year residual memory.</p>
-<p><strong>Run this code.</strong> Fit an advanced <code>glmmTMB</code> model with a site intercept and AR(1) time structure within site.</p>
-<p><strong>Look at this output.</strong> Inspect the variance components and the AR(1) correlation.</p>
-<p><strong>Interpretation.</strong> This model asks a more detailed question than either random intercepts or AR(1) alone.</p>
-<p><strong>Next step.</strong> Treat this as an advanced candidate in a multiverse, not as the automatic final model.</p>
-<p><strong>Common mistake.</strong> More structure is not always better. Small datasets can overfit complex covariance models.</p>
+<p><strong>Question:</strong> Can hierarchical and temporal residual dependence occur together?</p>
+<p>Yes. A wetland may have a persistent baseline while also showing year-to-year residual memory. The advanced <code>glmmTMB</code> model below combines a site intercept with an AR(1) time structure; its variance components and correlation parameter describe different sources of dependence.</p>
+<p><strong>Keep in mind:</strong> this is a candidate for sensitivity or multiverse analysis, not an automatic final model. Complex covariance structures can overfit small datasets.</p>
 </div>
 
 <div class="warning-box">
@@ -1258,38 +1332,35 @@ label means the model has created a structured time effect within each site; it
 does not mean that only the year 2001 was modelled. A very small residual
 standard deviation can also appear when much of the remaining within-site
 variation has been allocated to the structured AR(1) term. In practice, that is
-a prompt for a sensitivity check, not a victory lap.
+a reason to simplify the model or examine alternative specifications in a
+sensitivity analysis.
 
 If this model fails or is unstable in a reader's dataset, the safer teaching
 move is to return to the GLS AR(1) example and then add complexity one piece at
 a time.
 
-# Example 6: read diagnostics without worshipping p-values
+# Example 6: interpret diagnostics in context
 
 <div class="workshop-box">
-<p><strong>Question.</strong> How should we use residual plots and diagnostic tests?</p>
-<p><strong>Plain-English idea.</strong> Diagnostics are warnings and guides, not automatic model selectors.</p>
-<p><strong>Run this code.</strong> Plot residuals against fitted values, time, and lag.</p>
-<p><strong>Look at this output.</strong> Ask whether structure remains large enough to matter for the scientific question.</p>
-<p><strong>Interpretation.</strong> A tiny diagnostic p-value in a large dataset may not matter biologically. A visible pattern in a small dataset may matter even without a tiny p-value.</p>
-<p><strong>Next step.</strong> Combine plots, effect sizes, model purpose, and ecological plausibility.</p>
-<p><strong>Common mistake.</strong> Do not keep adding terms until every diagnostic test is non-significant.</p>
+<p><strong>Question:</strong> How should residual plots and diagnostic tests inform the analysis?</p>
+<p>Examine residuals against fitted values, through time and across lags, asking whether any remaining structure is large enough to affect the scientific conclusion. Diagnostics guide investigation; they are not automatic model-selection rules.</p>
+<p><strong>Keep in mind:</strong> statistical significance depends on sample size. Interpret diagnostic tests alongside plots, effect magnitude, model purpose and ecological plausibility rather than adding terms until every test is non-significant.</p>
 </div>
 
 ```{r diagnostic-plots, fig.cap="Four diagnostic views for the systematic linear model.", fig.alt="Four-panel diagnostic figure. Panels show residuals against fitted values, residuals through time, the autocorrelation function for one site, and mean within-site lag correlation."}
-old_par <- par(mfrow = c(2, 2))
+old_par <- par(mfrow = c(2, 2), mar = c(4, 4, 2.5, 1))
 plot(fitted(m_systematic), residuals(m_systematic),
      xlab = "Fitted value", ylab = "Residual",
-     main = "Systematic LM residuals")
+     main = "Residuals versus fitted")
 abline(h = 0, lty = 2)
 plot(wetland_monitoring$year, residuals(m_systematic),
-     col = site_cols[wetland_monitoring$site], pch = 19,
+     col = site_cols[as.character(wetland_monitoring$site)], pch = 19,
      xlab = "Year", ylab = "Residual",
      main = "Residuals through time")
 abline(h = 0, lty = 2)
 acf(subset(wetland_monitoring, site == "W01")$resid_systematic,
-    main = "ACF for one site")
-plot_lag_correlation(systematic_lag, "Mean within-site lag correlation")
+    main = "ACF for site W01")
+plot_lag_correlation_base(systematic_lag, "Across-site lag summary")
 par(old_par)
 ```
 
@@ -1298,29 +1369,40 @@ if (!has_pkg("DHARMa")) cat(skip_note("DHARMa"))
 ```
 
 ```{r dharma-diagnostics, eval=has_pkg("DHARMa") && has_pkg("glmmTMB"), fig.cap="Optional DHARMa simulation residual diagnostics for the combined model.", fig.alt="Diagnostic plots generated by DHARMa for simulated residuals. These plots assess whether residuals behave as expected under the fitted model."}
-sim_res <- DHARMa::simulateResiduals(m_combined)
+sim_res <- DHARMa::simulateResiduals(
+  fittedModel = m_combined,
+  n = 500,
+  plot = FALSE
+)
 plot(sim_res)
-DHARMa::testTemporalAutocorrelation(
+
+# testTemporalAutocorrelation() requires unique time values. Because the dataset
+# contains 12 observations per year, aggregate the DHARMa residuals by year for
+# a diagnostic of temporal structure shared across sites. Within-site temporal
+# dependence is examined separately with the lag summaries above.
+sim_res_by_year <- DHARMa::recalculateResiduals(
   sim_res,
-  time = wetland_monitoring$year
+  group = wetland_monitoring$year
+)
+DHARMa::testTemporalAutocorrelation(
+  sim_res_by_year,
+  time = sort(unique(wetland_monitoring$year))
 )
 ```
 
 DHARMa includes tests for temporal, spatial, and phylogenetic autocorrelation in
-simulation residuals, but the right test still depends on the structure supplied
-by the analyst. A temporal test is not evidence about a phylogenetic covariance
-matrix, and a spatial test needs the right spatial coordinates or distance matrix.
+simulation residuals, but the diagnostic scale must match the scientific question.
+The code above aggregates residuals by calendar year and therefore evaluates
+remaining temporal structure shared across sites. It is not a substitute for
+within-site checks. Repeated spatial or temporal coordinates likewise require
+aggregation or separate diagnostics for the relevant subgroups.
 
 # Example 7: heteroscedasticity
 
 <div class="workshop-box">
-<p><strong>Question.</strong> What if residual variance changes with environmental stress?</p>
-<p><strong>Plain-English idea.</strong> Variance can be biological. A stressful environment may make richness less predictable.</p>
-<p><strong>Run this code.</strong> Create data where residual spread increases with temperature anomaly and fit a variance model.</p>
-<p><strong>Look at this output.</strong> Compare residual plots and GLS weights.</p>
-<p><strong>Interpretation.</strong> Heteroscedasticity mainly affects uncertainty, but changing variance can also be ecologically meaningful.</p>
-<p><strong>Next step.</strong> Choose a variance structure that matches the predictor scale.</p>
-<p><strong>Common mistake.</strong> <code>varIdent(form = ~ 1 | group)</code> is for categorical groups. For a continuous variance covariate, use structures such as <code>varPower()</code> or <code>varExp()</code>.</p>
+<p><strong>Question:</strong> What if residual variance changes with environmental stress?</p>
+<p>Changing variance can itself be ecologically informative: stressful conditions may make richness less predictable. The example increases residual spread with temperature anomaly and compares an ordinary model with a GLS variance model.</p>
+<p><strong>Keep in mind:</strong> the variance structure must match the predictor scale. <code>varIdent(form = ~ 1 | group)</code> is intended for categorical groups; continuous variance covariates can be represented with structures such as <code>varPower()</code> or <code>varExp()</code>.</p>
 </div>
 
 ```{r heteroscedastic-data}
@@ -1338,21 +1420,24 @@ mu_het <-
 sigma_het <- 0.5 + 1.1 * dat_het$temp_abs
 dat_het$richness <- round(pmax(mu_het + rnorm(nrow(dat_het), 0, sigma_het), 1), 1)
 
-m_het_naive <- lm(richness ~ temp_anomaly, data = dat_het)
+het_formula <- richness ~ temp_anomaly + habitat_quality +
+  poly(year_c, 2, raw = TRUE) + site
+
+m_het_naive <- lm(het_formula, data = dat_het)
 m_het_gls <- nlme::gls(
-  richness ~ temp_anomaly,
+  het_formula,
   weights = nlme::varPower(form = ~ temp_abs),
   data = dat_het,
-  method = "ML"
+  method = "REML"
 )
 
 knitr::kable(
   tidy_coef(m_het_naive),
-  caption = "Naive linear model for the heteroscedastic dataset."
+  caption = "Mean model that assumes constant residual variance in the heteroscedastic dataset."
 )
 knitr::kable(
   tidy_coef(m_het_gls),
-  caption = "GLS model with residual variance changing with temperature anomaly."
+  caption = "GLS model with the same systematic component and residual variance changing with temperature anomaly."
 )
 ```
 
@@ -1382,22 +1467,18 @@ ggplot2::ggplot(het_plot_data, ggplot2::aes(temp_anomaly, residual)) +
   theme_tutorial()
 ```
 
-This is the practical counterpart of Box 2 in the manuscript.
+This example provides the practical counterpart to Box 2 of the Review.
 
 # Example 8: outliers and robustness
 
 <div class="workshop-box">
-<p><strong>Question.</strong> What should we do with extreme years or extreme sites?</p>
-<p><strong>Plain-English idea.</strong> Outliers may be data errors, rare ecological events, or signs that the model is too simple.</p>
-<p><strong>Run this code.</strong> Add a few extreme observations and compare ordinary and robust fits.</p>
-<p><strong>Look at this output.</strong> Inspect the fitted slope and residual plot.</p>
-<p><strong>Interpretation.</strong> A sensitivity analysis is usually better than automatic deletion.</p>
-<p><strong>Next step.</strong> Report whether the scientific conclusion depends on the extreme observations.</p>
-<p><strong>Common mistake.</strong> Do not delete biologically real extremes just because they make the model uncomfortable.</p>
+<p><strong>Question:</strong> How should extreme years or sites be handled?</p>
+<p>Extreme observations may be data errors, rare ecological events or signs of model misspecification. Add several identifiable extremes, compare ordinary and robust fits, and report whether the estimated temperature association changes materially.</p>
+<p><strong>Keep in mind:</strong> sensitivity analysis is usually preferable to automatic deletion. Biologically real extremes should not be removed solely because they exert strong influence on the fitted model.</p>
 </div>
 
 ```{r outlier-data}
-set.seed(2028)
+set.seed(2026)
 dat_outlier <- wetland_monitoring
 outlier_rows <- sample(seq_len(nrow(dat_outlier)), 5)
 dat_outlier$richness[outlier_rows] <- dat_outlier$richness[outlier_rows] +
@@ -1450,16 +1531,16 @@ ggplot2::ggplot(dat_outlier, ggplot2::aes(temp_anomaly, resid_lm)) +
   theme_tutorial()
 ```
 
+The robust fit assesses sensitivity to extreme observations. It does not account
+for temporal or clustered dependence, which would require an additional modelling
+or inferential strategy.
+
 # Example 9: conditional, marginal, and within-site effects
 
 <div class="workshop-box">
-<p><strong>Question.</strong> Are GLMMs, GEEs, and fixed-effects models just different software for the same question?</p>
-<p><strong>Plain-English idea.</strong> No. They can target different estimands.</p>
-<p><strong>Run this code.</strong> Decompose temperature into a within-site part and a between-site part, then compare the question each coefficient answers.</p>
-<p><strong>Look at this output.</strong> Focus on the interpretation of the temperature effect, not only the number.</p>
-<p><strong>Interpretation.</strong> Conditional means "within a site, after accounting for site baseline." Marginal means "average across the population of sites." Within-site means "when a site is warmer than its own average." Between-site means "sites that are warmer on average than other sites."</p>
-<p><strong>Next step.</strong> State the estimand before choosing software.</p>
-<p><strong>Common mistake.</strong> Do not call a difference among estimands a robustness failure unless the models are meant to answer the same question.</p>
+<p><strong>Question:</strong> Do GLMMs, GEEs and fixed-effects models answer the same question?</p>
+<p>Not necessarily. Decomposing temperature into within-site and between-site components shows how closely related models can target different estimands. A within-site coefficient describes years when a wetland is warmer than its own average; a between-site coefficient contrasts wetlands with different average temperatures.</p>
+<p><strong>Keep in mind:</strong> conditional effects account for the specified site structure, whereas marginal effects average across the population. Differences between estimands are not evidence of a robustness failure unless the models were intended to answer the same question.</p>
 </div>
 
 ```{r within-site-base}
@@ -1493,7 +1574,12 @@ knitr::kable(
 The pooled temperature coefficient mixes two questions: what happens when a site
 is warmer than usual, and how warmer sites differ from cooler sites. The
 within-between decomposition separates these. This is often called a Mundlak-style
-decomposition in panel-data discussions.
+decomposition in panel-data discussions. Because this teaching dataset uses a
+Gaussian model with an identity link, conditional and population-average slopes
+are often closer in interpretation than they would be in logistic or other
+nonlinear-link models. The main contrast here is therefore pooled versus within-
+and between-site effects, not a claim that every GLMM and GEE coefficient must
+differ.
 
 ```{r conditional-model, eval=has_pkg("glmmTMB")}
 m_conditional_mundlak <- glmmTMB::glmmTMB(
@@ -1522,6 +1608,9 @@ if (!has_pkg("geepack")) cat(skip_note("geepack"))
 ```
 
 ```{r gee-model, eval=has_pkg("geepack")}
+dat_within <- dat_within[order(dat_within$site, dat_within$year), , drop = FALSE]
+stopifnot(!is.unsorted(as.integer(dat_within$site)))
+
 m_gee <- geepack::geeglm(
   richness ~ temp_within + temp_site_mean + habitat_quality +
     poly(year_c, 2, raw = TRUE),
@@ -1532,6 +1621,11 @@ m_gee <- geepack::geeglm(
 )
 summary(m_gee)
 ```
+
+This GEE fit has only 12 independent site clusters. It is included to clarify the
+population-averaged estimand and working-correlation syntax, not to support precise
+large-sample inference. In an applied analysis, assess whether the number of clusters
+is adequate and consider an appropriate small-sample correction where available.
 
 ```{r plm-status, echo=FALSE, results='asis'}
 if (!has_pkg("plm")) cat(skip_note("plm"))
@@ -1550,13 +1644,9 @@ summary(m_plm)
 # Example 10: robust standard errors
 
 <div class="workshop-box">
-<p><strong>Question.</strong> What if we want inference that is less sensitive to within-site correlation?</p>
-<p><strong>Plain-English idea.</strong> Cluster-robust standard errors adjust uncertainty. They do not change the ecological model.</p>
-<p><strong>Run this code.</strong> Fit a simple linear model and compute site-clustered standard errors.</p>
-<p><strong>Look at this output.</strong> Compare ordinary and cluster-robust standard errors.</p>
-<p><strong>Interpretation.</strong> Robust SEs can protect inference when the dependence model is uncertain, but the cluster definition must match the sampling process.</p>
-<p><strong>Next step.</strong> Use enough independent clusters, report the clustering level, and prefer small-sample corrections such as CR2 when available.</p>
-<p><strong>Common mistake.</strong> Robust SEs do not fix a missing predictor, an inappropriate response distribution, or a biased sampling design.</p>
+<p><strong>Question:</strong> Can inference be made less sensitive to an uncertain within-site correlation structure?</p>
+<p>Cluster-robust standard errors adjust uncertainty without changing the fitted ecological model. Compare ordinary and site-clustered standard errors, making sure that the clustering level reflects the sampling process.</p>
+<p><strong>Keep in mind:</strong> robust standard errors require enough independent clusters; report the clustering level and use a small-sample correction such as CR2 when available. They do not repair an omitted predictor, an unsuitable response distribution or biased sampling.</p>
 </div>
 
 ```{r robust-se}
@@ -1572,22 +1662,21 @@ V_cluster <- sandwich::vcovCL(
   cluster = wetland_monitoring$site,
   type = "HC1"
 )
-clustered <- lmtest::coeftest(m_lm_cluster, vcov. = V_cluster)
+clustered_test <- lmtest::coeftest(m_lm_cluster, vcov. = V_cluster)
 clustered <- data.frame(
-  term = rownames(clustered),
-  estimate = round(clustered[, 1], 3),
-  se = round(clustered[, 2], 3),
-  statistic = round(clustered[, 3], 2),
-  p_value = format_p(clustered[, 4]),
+  term = rownames(clustered_test),
+  estimate = round(clustered_test[, 1], 3),
+  se = round(clustered_test[, 2], 3),
   row.names = NULL
 )
 
-ordinary$model <- "ordinary LM SE"
-clustered$model <- "site-clustered SE"
+ordinary <- ordinary[, c("term", "estimate", "se")]
+ordinary$model <- "ordinary model-based SE"
+clustered$model <- "site-clustered HC1 SE"
 robust_compare <- rbind(ordinary, clustered)
 robust_compare <- robust_compare[
   robust_compare$term %in% c("temp_anomaly", "habitat_quality"),
-  c("model", "term", "estimate", "se", "statistic", "p_value")
+  c("model", "term", "estimate", "se")
 ]
 knitr::kable(
   robust_compare,
@@ -1599,9 +1688,10 @@ knitr::kable(
 ```
 
 With only `r n_site_clusters` site clusters, the HC1 cluster-robust standard
-errors above are a teaching example, not a gold-standard final analysis. For a
-paper, prefer a small-sample correction such as CR2 with Satterthwaite degrees
-of freedom when `clubSandwich` supports the fitted model.
+errors above are a teaching comparison rather than a basis for asymptotic
+p-values. In an applied analysis, prefer a small-sample correction such as CR2
+with Satterthwaite degrees of freedom when `clubSandwich` supports the fitted
+model.
 
 ```{r clubsandwich-status, echo=FALSE, results='asis'}
 if (!has_pkg("clubSandwich")) {
@@ -1623,17 +1713,13 @@ clubSandwich::coef_test(
 # Example 11: prediction and data leakage
 
 <div class="workshop-box">
-<p><strong>Question.</strong> Why can random cross-validation be too optimistic for dependent biodiversity data?</p>
-<p><strong>Plain-English idea.</strong> If training and test data share nearby years or the same sites, the test set is not truly independent for the prediction task.</p>
-<p><strong>Run this code.</strong> Compare random, future-year, and new-site holdouts.</p>
-<p><strong>Look at this output.</strong> The RMSE changes because the prediction task changes.</p>
-<p><strong>Interpretation.</strong> To predict future years, hold out future years. To predict new sites, hold out sites. To predict new species or clades, hold out species or clades.</p>
-<p><strong>Next step.</strong> Design validation around the deployment problem.</p>
-<p><strong>Common mistake.</strong> Random row splits can leak spatial, temporal, phylogenetic, or hierarchical information into the test set.</p>
+<p><strong>Question:</strong> Why can random cross-validation be optimistic for dependent biodiversity data?</p>
+<p>Training and test rows may share nearby years or ecological units, so a random split can evaluate an easier task than the intended application. Compare random-row, future-year and new-site holdouts; the resulting RMSE values differ because the prediction targets differ.</p>
+<p><strong>Keep in mind:</strong> validation should match deployment. Hold out future years for forecasting, sites for transfer to new sites, and species or clades for taxonomic transfer.</p>
 </div>
 
 ```{r blocked-validation}
-set.seed(2029)
+set.seed(2026)
 
 random_test <- sample(seq_len(nrow(wetland_monitoring)),
                       size = floor(0.25 * nrow(wetland_monitoring)))
@@ -1666,16 +1752,18 @@ knitr::kable(
 )
 ```
 
+The prediction model contains no site-specific term. Consequently, the new-site split
+changes the target population but does not directly quantify leakage through a fitted
+site effect. The comparison is therefore an illustration of task-aligned validation;
+models containing site, spatial or other structured effects can show a larger contrast
+between random and blocked splits.
+
 # Optional Bayesian example
 
 <div class="workshop-box">
-<p><strong>Question.</strong> Do Bayesian models remove the need to think about autocorrelation?</p>
-<p><strong>Plain-English idea.</strong> No. Bayesian models can include dependence structures and priors, but dependence still has to be represented in the model.</p>
-<p><strong>Run this code.</strong> The chunk is not run by default because Bayesian fitting can be slow and requires <code>brms</code> and Stan tooling.</p>
-<p><strong>Look at this output.</strong> In a real analysis, inspect posterior intervals, posterior predictive checks, and convergence diagnostics.</p>
-<p><strong>Interpretation.</strong> Priors can regularize complex models, but they are not a substitute for the sampling design or residual checks.</p>
-<p><strong>Next step.</strong> Use Bayesian models when posterior uncertainty, partial pooling, prior information, or complex covariance structures matter for the question.</p>
-<p><strong>Common mistake.</strong> Do not say "we used Bayesian methods" as if that automatically handles dependence.</p>
+<p><strong>Question:</strong> Do Bayesian models remove the need to consider autocorrelation?</p>
+<p>No. Bayesian models can incorporate dependence structures and priors, but the relevant dependence must still be specified. The <code>brms</code> example is displayed rather than run because it requires Stan tooling and may take substantially longer than the core examples.</p>
+<p><strong>Keep in mind:</strong> inspect posterior intervals, posterior predictive checks and convergence diagnostics. Priors can regularize a complex model, but neither priors nor Bayesian computation substitute for an appropriate sampling design and dependence structure.</p>
 </div>
 
 ```{r brms-status, echo=FALSE, results='asis'}
@@ -1684,6 +1772,8 @@ if (!has_pkg("brms")) cat(skip_note("brms"))
 ```
 
 ```{r brms-ar1-example, eval=FALSE}
+set.seed(2026)
+
 m_bayes_ar1 <- brms::brm(
   brms::bf(
     richness ~ temp_anomaly + habitat_quality + poly(year_c, 2, raw = TRUE) +
@@ -1694,7 +1784,8 @@ m_bayes_ar1 <- brms::brm(
   prior = c(
     brms::prior(normal(0, 2), class = "b"),
     brms::prior(exponential(1), class = "sd"),
-    brms::prior(exponential(1), class = "sigma")
+    brms::prior(exponential(1), class = "sigma"),
+    brms::prior(normal(0, 0.5), class = "ar")
   ),
   chains = 4,
   iter = 2000,
@@ -1717,13 +1808,9 @@ m_bayes_phylo <- brms::brm(
 # Optional real ecological data sidebar
 
 <div class="workshop-box">
-<p><strong>Question.</strong> Can we see a real ecological count-data example?</p>
-<p><strong>Plain-English idea.</strong> The core tutorial uses simulation because the truth is known. A real dataset is useful for seeing non-normal responses and site-level structure.</p>
-<p><strong>Run this code.</strong> Use <code>glmmTMB::Salamanders</code> if <code>glmmTMB</code> is installed.</p>
-<p><strong>Look at this output.</strong> Fit a negative-binomial model for counts with site-level random effects and zero inflation.</p>
-<p><strong>Interpretation.</strong> This is a count-data sidebar, not the core autocorrelation example.</p>
-<p><strong>Next step.</strong> Cite the package and the data source when using this dataset.</p>
-<p><strong>Common mistake.</strong> Do not treat a convenient package dataset as if it has the same sampling structure as your own monitoring data.</p>
+<p><strong>Question:</strong> How does the workflow extend to real ecological count data?</p>
+<p>The core tutorial uses simulation so that the data-generating process is known. This optional sidebar instead uses <code>glmmTMB::Salamanders</code> to illustrate a negative-binomial count model with site-level random effects and zero inflation.</p>
+<p><strong>Keep in mind:</strong> this dataset illustrates count-data modelling rather than the tutorial's core autocorrelation example. Cite the package and data source, and do not assume that its sampling structure matches that of another monitoring study.</p>
 </div>
 
 The `Salamanders` documentation describes repeated counts from 23 stream sites
@@ -2057,111 +2144,6 @@ response.
 - Limitations: what the model cannot distinguish, what dependence remains
   uncertain, and what the next data collection would improve.
 
-# Author audit appendix
-
-The next two audits are for the manuscript authors, not for a first-time reader
-working through the code. They are collapsed by default so they do not interrupt
-the tutorial.
-
-<details>
-<summary><strong>Author design-lens audit</strong></summary>
-
-```{r author-design-lens}
-author_lens <- data.frame(
-  author = c("Yefeng Yang", "Jinming Pan", "David Warton", "Shinichi Nakagawa"),
-  lens = c(
-    "First-author reader experience",
-    "Applied ecological usefulness",
-    "Ecological statistics discipline",
-    "Accessible open-science teaching"
-  ),
-  what_this_tutorial_should_deliver = c(
-    "A page that feels modern, generous, and runnable, not a thin supplement.",
-    "A clear ecological data story that practitioners can map onto their own monitoring data.",
-    "Correct separation of systematic structure, residual dependence, estimand, and uncertainty.",
-    "A reproducible, reviewer-responsive tutorial that is easy for graduate students to follow."
-  ),
-  where_to_check = c(
-    "Hero panel, setup, many small code chunks, and interpretation boxes.",
-    "Wetland monitoring story, own-data template, and reporting checklist.",
-    "Examples 2 to 14, especially GLS AR(1), variance modelling, estimands, and robust SE caveats.",
-    "Accessibility box, captions/alt text, optional-heavy-code policy, reviewer mapping audit."
-  )
-)
-
-knitr::kable(
-  author_lens,
-  caption = "Author-facing design audit for the expanded code-along tutorial."
-)
-```
-
-</details>
-
-<details>
-<summary><strong>Reviewer mapping audit</strong></summary>
-
-```{r reviewer-mapping}
-reviewer_mapping <- data.frame(
-  reviewer_or_source = c(
-    "Editor practical SI request",
-    "Reviewer 4 graduate-student usefulness",
-    "Reviewer 4 picture for mean/error structure",
-    "Reviewer 4 Bayesian concern",
-    "Reviewer 3 Equation 1 critique",
-    "Reviewer 1 Gauss-Markov clarification",
-    "Reviewer 1 conditional versus marginal",
-    "Reviewer 1 data leakage",
-    "Reviewer 1 robust SE and DHARMa caveats",
-    "Reviewer 1 Box 2 variance correction",
-    "Reviewer 3 stream/lattice/spatial complexity",
-    "Manuscript Table 1",
-    "Manuscript Box 1",
-    "Manuscript Box 2",
-    "Manuscript Box 3"
-  ),
-  tutorial_response = c(
-    "Code-along examples 1-11 plus checklist",
-    "Workshop pattern in every main example",
-    "Four-panel conceptual figure",
-    "Optional brms section with AR and phylogenetic sketches",
-    "Signal, distribution, and dependence section",
-    "Plain-language note distinguishing optimality from exact inference",
-    "Conditional, marginal, and within-site examples",
-    "Blocked validation example",
-    "Diagnostics section and robust SE section",
-    "Heteroscedasticity example with varPower and varIdent caveat",
-    "Extension panels and capability matrix",
-    "Random-effect syntax in site-level model section",
-    "GLS AR(1), glmmTMB AR(1), and extension panels",
-    "Heteroscedasticity and outlier examples",
-    "Systematic-first workflow and diagnostic examples"
-  )
-)
-knitr::kable(
-  reviewer_mapping,
-  caption = "How the tutorial addresses manuscript and reviewer requests."
-)
-```
-
-<p><strong>Accessibility audit</strong></p>
-
-This tutorial is written for biologists, ecologists, conservation scientists, and
-environmental scientists who may not use these models every week. Before sharing
-or revising the page further, use this checklist.
-
-- Can a reader run the core examples without installing the optional packages?
-- Does each model answer a named scientific question, not just a software question?
-- Does each plot have a caption and alt text in the rendered HTML?
-- Does every important table have a caption explaining why it is shown?
-- Are optional chunks clearly marked when they are not run by default?
-- Does the interpretation say what the result means biologically?
-- Is colour never the only way to identify a key pattern?
-- Are acronyms introduced in plain language before they are used as shorthand?
-- Are the advanced package panels clearly separated from the core workflow?
-- Would a graduate student know what to try next after each section?
-
-</details>
-
 # Session info
 
 ```{r session-info}
@@ -2172,9 +2154,3 @@ if (has_pkg("sessioninfo")) {
 }
 ```
 
-# Declaration
-
-This tutorial expands the original example page in this repository. Parts of the
-diagnostic workflow are inspired by Florian Hartig's *Advanced Regression Models
-with R* and by the manuscript reviewers' requests for more practical guidance.
-The simulated wetland dataset is newly generated for this tutorial.
