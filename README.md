@@ -1,5 +1,5 @@
 
-# Robust modelling and inference for biodiversity data
+# Robust modelling and inference for dependent data
 
 ### Reproducible R tutorials for dependence-aware modelling, diagnostics and statistical inference
 
@@ -7,7 +7,7 @@ This repository provides the reproducible code and online tutorials accompanying
 
 > **Robust modelling and inference for conservation biology: flexible statistical solutions for non-normal, hierarchical, temporal, spatial, and phylogenetic data**
 
-The repository is designed to help ecologists, conservation scientists, biodiversity researchers and students move from statistical principles to practical implementation in **R**.
+The repository is designed to help researchers and students move from statistical principles to practical implementation in **R**.
 
 Two complementary tutorials are provided: one focuses on **model diagnostics**, particularly the diagnosis of residual dependence and other forms of model misspecification; the other provides a broader **code-along guide to the modelling and inferential strategies** discussed in the article.
 
