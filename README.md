@@ -113,6 +113,10 @@ The guiding principle is:
 
 > **Model choice should follow the scientific question, data-generating structure and inferential target, rather than software availability or statistical habit.**
 
+
+![Uploading image.png…]()
+
+
 ---
 
 ## Reproducibility
@@ -194,6 +198,4 @@ We welcome feedback from researchers using these materials. If you identify an e
 *These tutorials are intended to complement, rather than replace, the conceptual and methodological discussion in the associated article. Researchers should adapt model structures, diagnostics and inferential procedures to the biological question, sampling design and dependence structure of their own data.*
 ````
 
-
-<img width="865" height="1083" alt="image" src="https://github.com/user-attachments/assets/98448ef8-e2e7-44dd-a2fb-44226b9cc85b" />
 
