@@ -6,7 +6,6 @@ title: "Robust statistical modelling and inference for conservation biology: rep
 authors:
   - family-names: "Yang"
     given-names: "Yefeng"
- orcid: "https://orcid.org/0000-0002-8610-4016"
   - family-names: "Pan"
     given-names: "Jinming"
   - family-names: "Warton"
@@ -14,5 +13,5 @@ authors:
   - family-names: "Nakagawa"
     given-names: "Shinichi"
 version: 1.0.0
-url: "https://github.com/Yefeng0920/Robust_modelling_bio"
 repository-code: "https://github.com/Yefeng0920/Robust_modelling_bio"
+url: "https://github.com/Yefeng0920/Robust_modelling_bio"
