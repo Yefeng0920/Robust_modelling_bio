@@ -1,3 +1,8 @@
+## Citation
+
+The archived version of this repository is available on Zenodo:
+
+**DOI:** [10.5281/zenodo.22761259](https://doi.org/10.5281/zenodo.22761259)
 
 # Robust modelling and inference for dependent data
 
