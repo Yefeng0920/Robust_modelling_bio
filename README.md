@@ -4,6 +4,8 @@ The archived version of this repository is available on Zenodo:
 
 **DOI:** [10.5281/zenodo.22761259](https://doi.org/10.5281/zenodo.22761259)
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22761259.svg)](https://doi.org/10.5281/zenodo.22761259)
+
 # Robust modelling and inference for dependent data
 
 ### Reproducible R tutorials for modelling, diagnostics and statistical inference
