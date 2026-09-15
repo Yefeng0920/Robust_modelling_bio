@@ -1,7 +1,7 @@
 
 # Robust modelling and inference for dependent data
 
-### Reproducible R tutorials for dependence-aware modelling, diagnostics and statistical inference
+### Reproducible R tutorials for modelling, diagnostics and statistical inference
 
 This repository provides the reproducible code and online tutorials accompanying the manuscript:
 
