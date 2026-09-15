@@ -1,1 +1,17 @@
 
+cff-version: 1.2.0
+message: "If you use these materials, please cite this software and the associated article."
+type: software
+title: "Robust statistical modelling and inference for conservation biology: reproducible tutorials and code"
+authors:
+  - family-names: "Yang"
+    given-names: "Yefeng"
+  - family-names: "Pan"
+    given-names: "Jinming"
+  - family-names: "Warton"
+    given-names: "David"
+  - family-names: "Nakagawa"
+    given-names: "Shinichi"
+version: 1.0.0
+url: "https://github.com/Yefeng0920/Robust_modelling_bio"
+repository-code: "https://github.com/Yefeng0920/Robust_modelling_bio"
